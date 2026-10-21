@@ -1,4 +1,4 @@
-"""Read subprocess stdout/stderr"""
+"""Read subprocess stdout/stderr with a size and time cap."""
 
 from __future__ import annotations
 
@@ -12,6 +12,16 @@ def communicate_capped(
     max_bytes: int,
     timeout_seconds: float,
 ) -> tuple[bytes, bytes, bool, bool]:
+    """
+    Wait for a process and capture stdout/stderr, with hard limits.
+
+    Reads both pipes on background threads so a full pipe cannot deadlock.
+    If either stream exceeds max_bytes, the process is killed and truncated
+    is True. If wait() exceeds timeout_seconds, the process is killed and
+    timed_out is True.
+
+    Returns (stdout, stderr, timed_out, truncated).
+    """
     stdout_buf = bytearray()
     stderr_buf = bytearray()
     truncated = False
