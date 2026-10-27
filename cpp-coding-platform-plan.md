@@ -22,7 +22,7 @@ The initial version should be a **real, usable application**, not just a proof o
 A learner should be able to:
 
 1. Open the exercise list.
-2. Browse or filter exercises using tags.
+2. Browse exercises grouped by section (Basics, Conditionals, Loops, ...).
 3. Choose any exercise without following a required sequence.
 4. Read the exercise description and examples.
 5. Edit starter C++ code in an in-browser Monaco editor.
@@ -57,16 +57,16 @@ The first substantial release should include:
 - Exercise pages
 - Exercise descriptions written in Markdown
 - Examples and starter code
-- Exercise tags
-- Tag-based filtering/search or browsing
+- Exercise sections (each exercise belongs to exactly one)
+- Section-grouped browsing of the exercise list
 - Monaco code editor
 - Run button
 - Hidden tests
 - Custom lightweight C++ test harness
 - JSON Lines (JSONL) test output
 - C++ compilation and execution in Docker
-- Node.js + TypeScript execution service
-- Flask + GraphQL application backend
+- Python sandbox runner (`backend/runner/`) that drives Docker
+- FastAPI + GraphQL application backend
 - Detailed test results
 - Compilation errors
 - Timeout handling
@@ -79,16 +79,16 @@ The first substantial release should include:
 - Free navigation between exercises
 - Basic responsive layout
 - Basic loading/error states
-- Automated tests for important frontend/backend/executor behavior
+- Automated tests for important frontend/backend/runner behavior
 - Documentation for local setup and architecture
 
 ### Good Stretch Features for the Multi-Week Project
 
 These are reasonable additions if the core experience is working reliably:
 
-- Exercise search by title/tag
+- Exercise search by title
 - More sophisticated exercise filtering
-- Exercise categories
+- Optional cross-cutting tags (only if sections prove too limiting)
 - Better test-result visualization
 - Code editor settings such as font size/theme
 - Keyboard shortcuts
@@ -149,22 +149,24 @@ This makes exercises easier to present consistently and lets the platform contro
 
 Learners can jump between exercises freely. There is no required progression.
 
-### Difficulty
+### Difficulty and sections
 
 Do not make difficulty levels a core organizational concept for now.
 
-Use tags instead, such as:
+Organize exercises into **sections** instead, such as:
 
-- arrays
-- strings
-- loops
-- conditionals
-- recursion
-- math
-- pointers
-- structs/classes
+- Basics
+- Conditionals
+- Loops
+- Arrays
+- Strings
+- Recursion
+- Pointers
+- Structs/classes
 
-Additional tags can be added as the exercise collection grows.
+Each exercise belongs to **exactly one** section (required), and each section holds a few exercises. A section is simply the exercise's parent folder (see §8), so nothing is stored twice. Additional sections can be added as the collection grows. Navigation is still free: sections group the list, they do not gate access.
+
+Earlier drafts of this plan used multi-valued tags with filtering. That was dropped: tags are valuable when exercises overlap heavily across topics, which is not expected here, and a single section per exercise is simpler to build, browse and test. If sections prove too limiting, optional tags can be added later as a separate field without changing the folder layout.
 
 ### Run vs. Submit
 
@@ -214,7 +216,7 @@ The main architectural principle is:
 
 > **Thin frontend, server-owned application logic, isolated code execution.**
 
-The project has three major application layers:
+The project has two major application layers plus an isolated sandbox:
 
 ```text
 Frontend
@@ -223,15 +225,15 @@ Next.js / React / TypeScript
         | GraphQL
         v
 Application Backend
-Flask / Python / GraphQL
+FastAPI / Python / GraphQL
         |
-        | HTTP
+        | in-process Python call
         v
-Execution Service
-Node.js / TypeScript
+Sandbox runner (backend/runner/)
         |
+        | docker CLI
         v
-Docker sandbox
+Docker sandbox (backend/sandbox/)
         |
         v
 g++ + C++ test harness
@@ -258,45 +260,49 @@ The frontend should **not** know:
 - how execution workspaces are created;
 - how student code is sandboxed.
 
-### Flask application backend
+### FastAPI application backend
 
-Flask is the application's main backend/API layer.
+FastAPI is the application's main backend/API layer.
 
 Responsibilities include:
 - exposing the GraphQL API;
 - validating application-level requests;
 - serving exercise metadata/content to the frontend;
 - coordinating execution requests;
-- calling the Node execution service;
-- converting executor results into the GraphQL response model;
+- calling the sandbox runner;
+- converting runner results into the GraphQL response model;
 - providing a future home for authentication, users, progress, submissions, etc.
 
-The Flask backend should not directly execute arbitrary C++ code.
+The backend must not compile or run arbitrary C++ on the host. It only calls the runner, which launches a locked-down Docker container; all untrusted code runs inside that container.
+
+The runner uses blocking `subprocess` calls, so resolvers that call it should be sync (run in FastAPI's threadpool) or wrap the call in `run_in_threadpool`, rather than blocking the event loop.
 
 ### GraphQL
 
-GraphQL is the primary API between the Next.js frontend and Flask.
+GraphQL is the primary API between the Next.js frontend and FastAPI.
 
 The initial schema can expose concepts such as:
 
 ```graphql
 query {
-  exercises {
-    id
-    slug
-    title
-    tags
+  sections {
+    id            # e.g. "01-basics"
+    name          # e.g. "Basics"
+    exercises {
+      id          # e.g. "001-sum"
+      title
+    }
   }
 }
 ```
 
 ```graphql
 query {
-  exercise(slug: "001-sum") {
+  exercise(id: "001-sum") {
     title
+    section
     description
     starterCode
-    tags
   }
 }
 ```
@@ -322,35 +328,33 @@ mutation {
 
 The exact schema should be designed as implementation begins rather than trying to predict every future feature now.
 
-### Node.js + TypeScript executor
+### Python sandbox runner
 
-The executor is intentionally separated from Flask.
+Code execution lives in a Python package, `backend/runner/`, with the container image in `backend/sandbox/`. It is a library called by the backend, not a separate service.
 
-Responsibilities include:
-- receiving execution requests from Flask;
-- locating the exercise's hidden test files;
-- creating a temporary workspace;
-- compiling the student's C++ code;
-- starting the Docker sandbox;
-- enforcing execution constraints;
-- collecting stdout/stderr/exit codes;
-- parsing JSONL test output;
-- returning structured results;
-- cleaning up temporary resources.
+Current public API (`backend/runner/__init__.py`):
 
-The executor can use a simple internal HTTP endpoint such as:
-
-```text
-POST /execute
+```python
+run_cpp(source: str, stdin: str = "", *, timeout_seconds: float = 2.0) -> RunResult
 ```
 
-GraphQL does **not** need to be used between Flask and the executor. GraphQL is the application-facing API; a small internal HTTP interface is enough for the execution service.
+Responsibilities include:
+- validating limits (source size, positive timeout);
+- checking that Docker is available and building the sandbox image on first use;
+- creating a temporary workspace and writing the source (and, once the harness exists, the hidden test files) into it;
+- starting the Docker sandbox, which compiles with `g++` and runs the binary (`backend/sandbox/run.sh`);
+- enforcing execution constraints (container limits, output cap, wall-clock timeout);
+- collecting stdout/stderr/exit codes and classifying them (compile error, compile timeout, run timeout, killed, ...);
+- parsing JSONL test output (not yet implemented; belongs in the harness phase);
+- cleaning up temporary resources (temp dir and `docker rm -f`).
 
-### Why keep Node.js in the architecture?
+`RunResult` (`ok`, `stage`, `stdout`, `stderr`, `exit_code`, `timed_out`, `message`) is an internal type. The backend maps it, together with the parsed JSONL, to the top-level statuses in §9.
 
-The project uses Flask because Python is a useful backend framework for the team, while Node.js + TypeScript remains a useful technology to learn for the execution service.
+### Why no separate execution service?
 
-Keeping the Node service narrow prevents the architecture from becoming unnecessarily complicated. Node is responsible for execution infrastructure; Flask is responsible for application/API logic.
+An earlier version of this plan used a Node.js + TypeScript service behind `POST /execute`. It was dropped: the runner was implemented in Python inside `backend/`, and an extra HTTP hop, second language runtime and second deployment would add complexity without adding isolation. The isolation boundary is the Docker container, not the process that launches it.
+
+If execution ever needs to scale independently (queues/workers, dedicated execution hosts), the runner package can be lifted behind an HTTP interface later without changing the GraphQL layer.
 
 ---
 
@@ -366,17 +370,15 @@ Keeping the Node service narrow prevents the architecture from becoming unnecess
 
 ### Application Backend
 
-- Python
-- Flask
+- Python 3.11+
+- FastAPI
 - GraphQL
-- A Python GraphQL library selected during implementation
+- A Python GraphQL library selected during implementation (any ASGI-compatible library works with FastAPI)
 
-### Execution Service
+### Sandbox Runner
 
-- Node.js
-- TypeScript
-- Internal HTTP API
-- `g++`
+- Python (standard library only; `subprocess` + Docker CLI)
+- `g++` (inside the sandbox image only)
 
 ### Isolation
 
@@ -395,8 +397,8 @@ Keeping the Node service narrow prevents the architecture from becoming unnecess
 
 ### Package / Dependency Management
 
-- npm for JavaScript/TypeScript
-- Python virtual environment + pip/requirements for Flask initially
+- npm for JavaScript/TypeScript (frontend only)
+- Python virtual environment + pip/requirements for the FastAPI backend initially
 - Docker for execution environment
 
 ### Repository
@@ -415,7 +417,7 @@ coding-platform/
 │   ├── app/
 │   │   ├── page.tsx
 │   │   ├── exercises/
-│   │   │   └── [slug]/
+│   │   │   └── [id]/
 │   │   │       └── page.tsx
 │   │   └── ...
 │   ├── components/
@@ -431,37 +433,37 @@ coding-platform/
 │   └── package.json
 │
 ├── backend/
-│   ├── app/
+│   ├── app/                  # FastAPI app (not yet created)
 │   │   ├── graphql/
 │   │   ├── exercises/
 │   │   ├── services/
 │   │   └── ...
+│   ├── runner/               # sandbox runner (exists)
+│   │   ├── __init__.py       # exports run_cpp, RunResult, Stage
+│   │   ├── execute.py        # run_cpp(): validate, workspace, call docker
+│   │   ├── docker.py         # docker checks, image build, docker run, cleanup
+│   │   ├── output.py         # capped stdout/stderr reader
+│   │   ├── result.py         # RunResult, Stage, exit-code classification
+│   │   ├── config.py         # limits and sandbox exit codes
+│   │   └── text.py
+│   ├── sandbox/              # sandbox image (exists)
+│   │   ├── Dockerfile
+│   │   └── run.sh            # in-container compile + run
+│   ├── run_code.py           # manual smoke test for the runner
 │   ├── tests/
 │   ├── requirements.txt
 │   └── README.md
 │
-├── executor/
-│   ├── src/
-│   │   ├── server.ts
-│   │   ├── docker.ts
-│   │   ├── compiler.ts
-│   │   ├── tests.ts
-│   │   └── workspace.ts
-│   ├── tests/
-│   ├── Dockerfile
-│   └── package.json
-│
 ├── exercises/
-│   ├── 001-sum/
-│   │   ├── exercise.md
-│   │   ├── starter.cpp
-│   │   └── tests.cpp
-│   ├── 002-...
+│   ├── 01-basics/            # section
+│   │   ├── 001-sum/          # exercise (id = "001-sum")
+│   │   │   ├── exercise.md
+│   │   │   ├── starter.cpp
+│   │   │   └── tests.cpp
+│   │   └── 002-...
+│   ├── 02-conditionals/
+│   │   └── 003-...
 │   └── ...
-│
-├── docker/
-│   └── cpp-runner/
-│       └── Dockerfile
 │
 ├── docs/
 │   ├── architecture.md
@@ -476,10 +478,8 @@ The exact folder names can change as implementation progresses. The important se
 
 ```text
 web/       -> frontend
-backend/   -> Flask + GraphQL
-executor/  -> Node + TypeScript + Docker execution
+backend/   -> FastAPI + GraphQL + sandbox runner (runner/) + sandbox image (sandbox/)
 exercises/ -> exercise definitions and hidden tests
-docker/    -> container configuration
 docs/      -> project documentation
 ```
 
@@ -487,17 +487,38 @@ docs/      -> project documentation
 
 ## 8. Exercise Format
 
-Each exercise should be self-contained.
+Each exercise should be self-contained, and lives inside exactly one section folder.
 
 Example:
 
 ```text
 exercises/
-└── 001-sum/
-    ├── exercise.md
-    ├── starter.cpp
-    └── tests.cpp
+├── 01-basics/
+│   ├── 001-sum/
+│   │   ├── exercise.md
+│   │   ├── starter.cpp
+│   │   └── tests.cpp
+│   └── 002-max/
+└── 02-conditionals/
+    └── 003-is-even/
 ```
+
+### Sections, ids and metadata
+
+There is no separate metadata file. Everything is derived from the folder structure and `exercise.md`, so nothing is stored twice:
+
+| Value | Where it comes from | Example |
+|---|---|---|
+| section id | section folder name | `01-basics` |
+| section name | section folder name with the numeric prefix removed, hyphens turned into spaces, capitalized | `Basics` |
+| section order | the numeric prefix of the section folder | `01` before `02` |
+| exercise id | exercise folder name | `001-sum` |
+| title | the first `# Heading` in `exercise.md` | `Sum` |
+
+Rules:
+- Exercise ids are unique across the **whole** repo, not just within a section (number exercises globally). The id is used in URLs and as the `exerciseId` for `executeCode`.
+- The backend scans `exercises/*/*/` at startup and builds an `id -> path` index. It must never build a filesystem path directly from a client-supplied `exerciseId`; it looks the id up in the index and rejects unknown ids.
+- Startup validation should fail loudly on duplicate ids, a missing `exercise.md` heading, or a missing `starter.cpp`/`tests.cpp`.
 
 ### `exercise.md`
 
@@ -523,20 +544,11 @@ int sum(int a, int b) {
 
 ### Hidden tests
 
-`tests.cpp` should remain on the server/executor side.
+`tests.cpp` should remain on the server side (backend/runner/sandbox), never sent to the browser.
 
 The browser should never receive hidden tests as part of a normal exercise request.
 
-As the exercise collection grows, each exercise can also have metadata such as:
-
-```text
-id
-slug
-title
-tags
-```
-
-The team should avoid duplicating metadata in multiple places unnecessarily.
+The team should avoid duplicating metadata in multiple places. If a new piece of per-exercise data is needed later (for example optional tags), prefer extending `exercise.md` or adding one clearly documented file rather than repeating existing values.
 
 ---
 
@@ -556,7 +568,7 @@ The harness should:
 
 ### JSONL output
 
-Use **JSON Lines (JSONL)** so the executor can parse results line-by-line.
+Use **JSON Lines (JSONL)** so the runner can parse results line-by-line.
 
 Example:
 
@@ -565,7 +577,7 @@ Example:
 {"name":"sum(-1, 5)","passed":false,"expected":"4","actual":"-6"}
 ```
 
-The exact JSON schema should be standardized early so that the C++ harness, Node executor, Flask GraphQL layer, and frontend all agree on the result format.
+The exact JSON schema should be standardized early so that the C++ harness, Python runner, FastAPI GraphQL layer, and frontend all agree on the result format.
 
 ### Result model
 
@@ -618,9 +630,9 @@ Suggested top-level statuses:
 
 ---
 
-## 10. Execution Service Design
+## 10. Execution Design
 
-The execution path should look approximately like this:
+The execution path looks like this:
 
 ```text
 User clicks Run
@@ -629,60 +641,56 @@ User clicks Run
 Next.js sends GraphQL mutation
        |
        v
-Flask resolver
+FastAPI resolver (validates exerciseId + code)
        |
        v
-Node executor /execute
+runner.run_cpp(...)   [in-process Python call]
+       |
+       v
+Check source size / limits, check Docker, build image if missing
        |
        v
 Create temporary workspace
        |
        v
-Write student code + test files
+Write student code + test files (+ harness)
        |
        v
-Compile
+docker run (locked-down container, workspace mounted read-only)
+       |   inside the container, run.sh:
+       |     g++ (compile timeout)
+       |        +---- failure -> exit 254 (compile error), 253 (compile timeout)
+       |     run binary (run timeout)
+       |        +---- timeout -> exit 124
+       v
+Runner classifies exit code, applies output cap / wall-clock timeout
        |
-       +---- compilation failure -> return compiler output
+       +---- timeout -> timeout
+       +---- killed / crash -> execution_error
        |
        v
-Start Docker sandbox
+Parse JSONL from stdout (harness phase)
        |
        v
-Run compiled program
-       |
-       +---- timeout -> return timeout
-       |
-       +---- runtime failure -> return execution error
-       |
-       v
-Parse JSONL
-       |
-       v
-Return structured result
-       |
-       v
-Flask GraphQL response
+Map to GraphQL result (passed / failed / compilation_error / timeout / execution_error)
        |
        v
 Next.js displays results
 ```
 
+Compilation and execution happen in the **same** container (one container per submission), distinguished by sandbox-specific exit codes defined in `backend/runner/config.py`.
+
 ### Temporary workspace
 
-Each submission should use an isolated temporary workspace, for example:
+Each submission uses an isolated temporary workspace created with Python's `tempfile.TemporaryDirectory` (for example `completec-xxxx`), mounted read-only at `/src` in the container. It is removed after execution whether the submission succeeds or fails; the container itself is also force-removed (`docker rm -f`) in a `finally` block.
 
-```text
-/tmp/run-abc123/
-```
-
-The workspace should be cleaned up after execution whether the submission succeeds or fails.
+The workspace directory and files must be readable by the sandbox user (UID 65534). `TemporaryDirectory` creates a `0700` directory, so on Linux/WSL the runner must `chmod` it (755 dir, 644 files) before starting the container.
 
 ### Important rule
 
-Never execute arbitrary student C++ directly inside the normal Next.js process or Flask process.
+Never compile or execute arbitrary student C++ directly inside the normal Next.js process or FastAPI process.
 
-The execution service and Docker layer exist specifically to separate untrusted code from the application itself.
+The Docker layer exists specifically to separate untrusted code from the application itself. The runner only launches and monitors the container.
 
 ---
 
@@ -692,22 +700,26 @@ For the initial implementation, Docker provides a practical isolation boundary f
 
 Suggested starting constraints:
 
-| Restriction | Initial target |
+| Restriction | Current value (`backend/runner/config.py`) |
 |---|---|
-| Network | disabled |
-| User | non-root |
-| CPU | ~1 CPU |
-| Memory | ~128–256 MB |
-| Process count | limited |
-| Execution timeout | ~2–5 sec |
-| Compilation timeout | ~5–10 sec |
-| Filesystem | temporary isolated workspace |
+| Network | disabled (`--network=none`) |
+| User | non-root (`nobody`, 65534:65534) |
+| Capabilities | all dropped, `no-new-privileges` |
+| CPU | 0.5 CPU |
+| Memory | 128 MB, swap disabled |
+| Process count | 32 (`--pids-limit`) |
+| Execution timeout | 2 sec (default, per call) |
+| Compilation timeout | 10 sec |
+| Wall-clock limit on `docker run` | compile + run + 30 sec grace |
+| Output cap | 64 KB (container killed if exceeded) |
+| Source size cap | 256 KB |
+| Filesystem | read-only root, 32 MB tmpfs `/tmp`, workspace mounted read-only |
 | Container lifetime | one per submission |
 | Privileged mode | never |
 | Docker socket | never exposed to student code |
-| Cleanup | always remove temporary resources |
+| Cleanup | temp dir removed; container force-removed in `finally` |
 
-These are starting values, not final production security guarantees.
+These are starting values, not final production security guarantees. Note that the 128 MB limit also covers the `/tmp` tmpfs and the compiler, so verify `g++` with `<iostream>` fits comfortably (an OOM kill during compile shows up as exit 137).
 
 ### Compile and execution limits
 
@@ -742,21 +754,22 @@ The GraphQL API should initially stay small.
 Potential operations:
 
 ```text
-exercises
-exercise(slug)
-tags
+sections          (each with its exercises: id + title)
+exercise(id)
 ```
 
-The exercise list response should contain enough metadata for browsing without sending unnecessary full exercise content for every item.
+The sections response should contain enough for browsing (section name, and each exercise's id and title) without sending full exercise content for every item.
 
 A single exercise query can return:
 
 ```text
 title
+section
 description
 starterCode
-tags
 ```
+
+The exercise `id` is the only identifier: it is the folder name (e.g. `001-sum`), it is used in URLs, and it is the `exerciseId` sent to `executeCode`. There is no separate slug.
 
 ### Execution mutation
 
@@ -793,7 +806,7 @@ The main exercise page will likely contain:
 
 ```text
 ---------------------------------------------------
-| Exercise title / tags                            |
+| Exercise title / section                         |
 ---------------------------------------------------
 | Description              | C++ Editor            |
 | Examples                 |                       |
@@ -813,7 +826,7 @@ Potential components:
 
 - `ExerciseList`
 - `ExerciseCard`
-- `TagFilter`
+- `SectionGroup`
 - `ExerciseView`
 - `ExerciseDescription`
 - `CodeEditor`
@@ -873,7 +886,7 @@ The application should distinguish different failure types rather than presentin
 Examples:
 - network unavailable;
 - GraphQL request failure;
-- executor unavailable;
+- sandbox unavailable (Docker not running, image build failed);
 - malformed response.
 
 ### Compilation failure
@@ -910,33 +923,40 @@ Because this is a group project with several layers, testing should be introduce
 
 Test important behavior such as:
 - exercise rendering;
-- tag filtering;
+- exercises grouped under the right section;
 - editor reset behavior;
 - localStorage persistence;
 - solved-state display;
 - loading/error states.
 
-### Flask/GraphQL tests
+### FastAPI/GraphQL tests
 
 Test:
 - exercise queries;
 - exercise lookup;
 - input validation;
 - execution mutation behavior;
-- conversion of executor results into GraphQL responses;
-- handling of executor failures.
+- conversion of runner results into GraphQL responses;
+- handling of runner failures (Docker unavailable, image build failure).
 
-### Executor tests
+Mock `run_cpp` in these tests so they run without Docker.
+
+### Runner tests
 
 Test:
 - valid C++ compilation;
 - failed compilation;
+- compile timeout;
 - passing tests;
 - failing tests;
-- timeout;
-- runtime errors;
+- run timeout;
+- runtime errors (non-zero exit, segfault);
+- output cap exceeded;
+- oversized source rejected;
 - malformed harness output;
-- cleanup after success/failure.
+- cleanup after success/failure (temp dir and container removed).
+
+Exit-code classification (`result_from_exit`) can be unit-tested without Docker. Tests that need real containers should be marked so they can be skipped when Docker is unavailable.
 
 ### Integration tests
 
@@ -944,11 +964,11 @@ Eventually test the full path:
 
 ```text
 GraphQL request
-    -> Flask
-    -> Node executor
+    -> FastAPI
+    -> runner
     -> Docker
     -> C++ tests
-    -> executor result
+    -> runner result
     -> GraphQL response
 ```
 
@@ -969,9 +989,9 @@ WSL2
   v
 Ubuntu
   |
-  +---- Node.js / npm
-  +---- Python / Flask
-  +---- g++
+  +---- Node.js / npm   (frontend only)
+  +---- Python 3.11+ / FastAPI
+  +---- g++              (optional locally; the sandbox image has its own)
   +---- Git
   +---- Docker CLI
           |
@@ -1062,7 +1082,9 @@ A shared repository that every team member can clone and run locally.
 
 ---
 
-### Phase 1 — Prove C++ execution in Docker
+### Phase 1 — Prove C++ execution in Docker  ✅ Done
+
+Implemented in `backend/runner/` + `backend/sandbox/`; smoke test via `python backend/run_code.py` from `backend/`.
 
 Before building the web application, prove the hardest infrastructure concept.
 
@@ -1117,21 +1139,20 @@ Student C++ code -> test harness -> JSONL results
 
 ---
 
-### Phase 3 — Build the Node.js executor
+### Phase 3 — Connect the runner to exercises and the harness  (runner core ✅ done)
 
-Turn the manual Docker process into a service.
+The Python runner already provides request limits, temporary workspaces, compilation, Docker execution, timeouts, output capping and cleanup (see §5). This phase finishes it for exercises.
 
-Implement:
-- HTTP endpoint;
-- request validation;
-- temporary workspaces;
-- compilation;
-- Docker execution;
-- timeouts;
-- result parsing;
-- cleanup.
+Remaining work:
+- load an exercise's hidden `tests.cpp` and combine it with the student's code and the harness in the workspace;
+- add a function such as `run_exercise(exercise_id, code)` on top of `run_cpp`;
+- parse the harness's JSONL from stdout and handle malformed output;
+- map runner outcomes to the top-level statuses (`passed`, `failed`, `compilation_error`, `timeout`, `execution_error`), including treating non-zero exit codes / crashes of the test binary as `execution_error` (currently any other exit code is reported `ok`);
+- avoid collisions between sandbox exit codes (124, 125, 126, 127, 253, 254) and the student program's own exit code (let the harness control `main` and its exit code);
+- fix workspace permissions for non-Windows hosts (see §10);
+- add runner unit tests.
 
-Example request:
+Example input:
 
 ```json
 {
@@ -1143,28 +1164,27 @@ Example request:
 Deliverable:
 
 ```text
-HTTP request -> Node executor -> Docker -> structured JSON result
+run_exercise("001-sum", code) -> Docker -> structured result (status + tests)
 ```
 
 ---
 
-### Phase 4 — Build Flask + GraphQL backend
+### Phase 4 — Build FastAPI + GraphQL backend
 
-Create the application backend around the executor.
+Create the application backend around the runner.
 
 Implement:
-- Flask application;
-- GraphQL schema;
+- FastAPI application (served with an ASGI server such as uvicorn);
+- GraphQL schema and a GraphQL library mounted on the FastAPI app;
 - exercise queries;
 - exercise lookup;
-- `executeCode` mutation;
-- communication with Node executor;
-- backend tests.
+- `executeCode` mutation, which calls the runner (off the event loop);
+- backend tests (with the runner mocked).
 
 Deliverable:
 
 ```text
-GraphQL request -> Flask -> Node executor -> GraphQL response
+GraphQL request -> FastAPI -> runner -> Docker -> GraphQL response
 ```
 
 At this point, the complete backend path should work even without a polished frontend.
@@ -1202,8 +1222,7 @@ Add:
 - solved state;
 - reset starter code;
 - reset progress;
-- exercise tags;
-- tag filtering;
+- exercise sections and section-grouped list;
 - more exercises.
 
 Deliverable:
@@ -1226,8 +1245,8 @@ Test difficult cases:
 - large output;
 - malformed requests;
 - malformed harness output;
-- simultaneous runs;
-- executor unavailable;
+- simultaneous runs (the runner blocks a thread per run; consider a concurrency limit);
+- Docker daemon unavailable;
 - Docker failures;
 - cleanup after failed executions;
 - attempts to access the network;
@@ -1260,27 +1279,25 @@ A likely deployment architecture is:
                             │ GraphQL
                             v
                  ┌─────────────────────┐
-                 │ Flask Backend       │
-                 │ Separate host      │
+                 │ FastAPI Backend     │
+                 │ + sandbox runner    │
+                 │ Docker-capable host │
                  └──────────┬──────────┘
-                            │ HTTP
-                            v
-                 ┌─────────────────────┐
-                 │ Node Executor       │
-                 │ Separate host       │
-                 └──────────┬──────────┘
-                            │
+                            │ docker CLI
                             v
                  ┌─────────────────────┐
                  │ Docker + g++        │
+                 │ (sandbox image)     │
                  └─────────────────────┘
 ```
 
 Important deployment implication:
 
-> Adding Flask means the application backend is no longer something that can simply live entirely inside a Vercel Next.js deployment.
+> Because the runner lives in the backend and launches Docker containers, the FastAPI backend and the Docker daemon must run on the same host. The backend can no longer live entirely inside a Vercel Next.js deployment, and it cannot run on hosts that don't allow Docker access.
 
-The Next.js frontend can still be deployed to Vercel, but the Flask API needs a compatible backend host, and the C++ execution service needs infrastructure capable of running Docker.
+The Next.js frontend can still be deployed to Vercel, but the FastAPI backend needs a host that can run a Python ASGI server **and** a Docker daemon.
+
+Security note: the backend process needs access to the Docker daemon (to run `docker`), which is powerful. The student code must never get that access (no Docker socket mounted into the sandbox), but anything that compromises the backend process could control Docker. Keep the backend small and consider a dedicated execution host later.
 
 The exact providers should be selected later based on current free-tier limitations, Docker support, networking, resource limits, and expected usage.
 
@@ -1300,25 +1317,25 @@ Own:
 - Next.js pages;
 - Monaco editor;
 - exercise UI;
-- tags/filtering;
+- section-grouped exercise list;
 - localStorage;
 - result display;
 - frontend tests.
 
-### Flask/API track
+### FastAPI/API track
 
 Own:
-- Flask application;
+- FastAPI application;
 - GraphQL schema;
 - exercise queries;
 - execution mutation;
 - API validation;
 - backend tests.
 
-### Executor/infrastructure track
+### Runner/infrastructure track
 
 Own:
-- Node executor;
+- Python sandbox runner (`backend/runner/`) and sandbox image (`backend/sandbox/`);
 - Docker integration;
 - compilation;
 - timeout/resource handling;
@@ -1351,7 +1368,7 @@ main
   |
   +-- feature/frontend-exercise-page
   +-- feature/graphql-exercises
-  +-- feature/executor-docker
+  +-- feature/sandbox-runner
   +-- feature/test-harness
 ```
 
@@ -1385,9 +1402,9 @@ Include:
 
 Explain:
 - Next.js;
-- Flask;
+- FastAPI;
 - GraphQL;
-- Node executor;
+- Python sandbox runner;
 - Docker;
 - C++ test harness;
 - request/response flow.
@@ -1398,7 +1415,7 @@ Explain:
 - WSL2 setup;
 - Docker setup;
 - Python environment;
-- Node dependencies;
+- Node dependencies (frontend);
 - running each service;
 - common troubleshooting steps.
 
@@ -1429,25 +1446,25 @@ A possible multi-week schedule:
 - monorepo
 - architecture documentation
 
-### Milestone 2 — C++ execution prototype
+### Milestone 2 — C++ execution prototype  ✅ Done
 
 - Docker compilation
 - execution
 - timeout
 - cleanup
 
-### Milestone 3 — Test harness + executor
+### Milestone 3 — Test harness + runner integration
 
 - first exercise
 - hidden tests
 - JSONL
-- Node executor
+- runner integration (`run_exercise`, result mapping)
 
-### Milestone 4 — Flask + GraphQL
+### Milestone 4 — FastAPI + GraphQL
 
 - exercise queries
 - execution mutation
-- executor integration
+- runner integration
 - backend tests
 
 ### Milestone 5 — Frontend
@@ -1463,8 +1480,8 @@ A possible multi-week schedule:
 - localStorage
 - solved status
 - reset
-- tags
-- filtering
+- sections
+- section-grouped list
 - additional exercises
 
 ### Milestone 7 — Testing + hardening
@@ -1479,8 +1496,7 @@ A possible multi-week schedule:
 ### Milestone 8 — Deployment + presentation
 
 - deploy frontend
-- deploy Flask backend
-- deploy executor
+- deploy FastAPI backend (with Docker on the same host)
 - configure environment variables
 - test end-to-end in production
 - write documentation
@@ -1496,7 +1512,7 @@ The first release should be considered complete when a new user can:
 
 1. Open the deployed website.
 2. Browse a collection of C++ exercises.
-3. Filter exercises using tags.
+3. See exercises grouped by section.
 4. Open an exercise.
 5. Read its description and examples.
 6. Edit starter C++ code.
@@ -1537,22 +1553,23 @@ Learn:
 - API integration;
 - Monaco integration.
 
-### TypeScript / Node.js
+### Python subprocess / sandbox runner
 
 Learn:
-- TypeScript project structure;
-- HTTP services;
-- request validation;
-- asynchronous execution;
-- process management;
-- filesystem operations;
-- error handling.
+- launching and supervising subprocesses (`subprocess`, threads for capped output);
+- timeouts and process killing;
+- temporary files and directories;
+- exit-code handling;
+- error handling;
+- blocking vs. async code (running the runner off the event loop).
 
-### Flask / Python
+### FastAPI / Python
 
 Learn:
-- Flask application structure;
+- FastAPI application structure (ASGI, uvicorn);
 - routing/resolvers;
+- async vs. sync endpoints and the threadpool;
+- Pydantic-style validation;
 - GraphQL schemas;
 - validation;
 - service-layer design;
@@ -1649,13 +1666,13 @@ Once the first release works, the architecture can grow toward:
                           GraphQL
                              │
                      ┌───────v───────┐
-                     │ Flask Backend  │
+                     │FastAPI Backend │
                      └───────┬───────┘
                              │
               ┌──────────────┼──────────────┐
               │              │              │
               v              v              v
-          Database       Executor       Auth/User
+          Database        Runner        Auth/User
               │              │              │
               │              v              │
               │           Docker            │
@@ -1704,14 +1721,12 @@ Create:
 ```text
 coding-platform/
 ├── web/
-├── backend/
-├── executor/
+├── backend/      (includes runner/ and sandbox/)
 ├── exercises/
-├── docker/
 └── docs/
 ```
 
-### Step 3 — Prove Docker C++ execution
+### Step 3 — Prove Docker C++ execution  ✅ Done (`backend/runner`, `backend/sandbox`)
 
 Do not start with the frontend.
 
@@ -1733,9 +1748,9 @@ Create `001-sum` with:
 - `starter.cpp`;
 - `tests.cpp`.
 
-### Step 5 — Build the executor
+### Step 5 — Connect the runner to exercises
 
-Make Node capable of turning:
+Make the Python runner capable of turning:
 
 ```text
 student code + exercise ID
@@ -1747,7 +1762,7 @@ into:
 structured execution result
 ```
 
-### Step 6 — Add Flask + GraphQL
+### Step 6 — Add FastAPI + GraphQL
 
 Expose exercises and code execution through the GraphQL API.
 
@@ -1757,11 +1772,11 @@ Connect Next.js to the GraphQL API and build the complete exercise workflow.
 
 ### Step 8 — Expand and harden
 
-Add more exercises, tags, persistence, tests, error handling, and security improvements.
+Add more exercises and sections, persistence, tests, error handling, and security improvements.
 
 ### Step 9 — Deploy
 
-Only after the local system is stable should the team decide where the Next.js frontend, Flask backend, and Docker-based executor should be hosted.
+Only after the local system is stable should the team decide where the Next.js frontend and the FastAPI backend (with Docker on the same host) should be hosted.
 
 ---
 
@@ -1784,17 +1799,17 @@ The intended first-release architecture is:
                            │
                            v
                 ┌─────────────────────┐
-                │ Flask / Python      │
+                │ FastAPI / Python    │
                 │ GraphQL API         │
                 │ Application Logic   │
                 └──────────┬──────────┘
                            │
-                         HTTP
+                  in-process call
                            │
                            v
                 ┌─────────────────────┐
-                │ Node.js / TypeScript│
-                │ Execution Service   │
+                │ Python Sandbox      │
+                │ Runner (docker CLI) │
                 └──────────┬──────────┘
                            │
                            v
@@ -1813,6 +1828,6 @@ The intended first-release architecture is:
 
 The central design principle remains:
 
-> **Keep the frontend focused on the user experience, keep application/business logic in Flask, and keep untrusted C++ execution isolated in its own Node/Docker execution layer.**
+> **Keep the frontend focused on the user experience, keep application/business logic in FastAPI, and keep untrusted C++ execution isolated inside the Docker sandbox driven by the Python runner.**
 
 This gives the group enough technical depth for a multi-week project while keeping the responsibilities of each service clear and giving the team a path toward future accounts, persistent data, multiple languages, and stronger execution infrastructure.
