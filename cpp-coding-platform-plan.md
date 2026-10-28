@@ -448,7 +448,8 @@ coding-platform/
 │   │   └── text.py
 │   ├── sandbox/              # sandbox image (exists)
 │   │   ├── Dockerfile
-│   │   └── run.sh            # in-container compile + run
+│   │   ├── run.sh            # in-container compile + run
+│   │   └── harness.h         # shared test helpers (check, to_str, json_escape)
 │   ├── run_code.py           # manual smoke test for the runner
 │   ├── tests/
 │   ├── requirements.txt
@@ -576,6 +577,20 @@ Example:
 {"name":"sum(2, 3)","passed":true,"expected":"5","actual":"5"}
 {"name":"sum(-1, 5)","passed":false,"expected":"4","actual":"-6"}
 ```
+
+### Shared harness and build order
+
+The shared helpers live in `backend/sandbox/harness.h` (include-guarded): `json_escape`, `to_str` overloads (defined above the template), and a templated `check(name, expected, actual)` that prints one JSONL line and never exits on a mismatch. Each exercise's `tests.cpp` contains only its test calls and a `main` that returns 0 after all tests run, so the runner can tell a failed test from a crash.
+
+The runner builds one `main.cpp` by concatenating, in this order:
+
+1. the student's code;
+2. `harness.h`;
+3. the exercise's `tests.cpp`.
+
+Student code comes first so compiler line numbers in student code stay correct. Exercises do not include a reference `solution.cpp`.
+
+Phase 3 notes: it's ok for the source-size limit to apply to the entire combined source, not just the student's code; filter compiler output so it never shows `tests.cpp` lines; and have the JSONL parser skip non-JSON lines, since student `cout` output shares stdout with the results.
 
 The exact JSON schema should be standardized early so that the C++ harness, Python runner, FastAPI GraphQL layer, and frontend all agree on the result format.
 

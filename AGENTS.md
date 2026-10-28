@@ -23,7 +23,7 @@ Docker sandbox (backend/sandbox/) -> g++ + C++ test harness
 | `web/` | UI, Monaco state, loading/error states, rendering results, `localStorage` |
 | `backend/` | GraphQL API, validation, exercise metadata/content, calls the runner, maps runner results to GraphQL |
 | `backend/runner/` | Temp workspaces, Docker run, limits, output capping, JSONL parsing, cleanup (orchestrates Docker only; never compiles or runs C++ on the host) |
-| `backend/sandbox/` | Sandbox image (`Dockerfile`) and in-container `run.sh` (g++ compile + run with timeouts) |
+| `backend/sandbox/` | Sandbox image (`Dockerfile`), in-container `run.sh` (g++ compile + run with timeouts), and the shared C++ test harness `harness.h` (`check`, `to_str`, `json_escape`) |
 | `exercises/` | Section folders (`01-basics/`), each holding exercise folders with `exercise.md`, `starter.cpp`, `tests.cpp` (hidden) |
 | `docs/` | `architecture.md`, `development.md`, `execution-security.md` |
 
@@ -53,7 +53,8 @@ Harness emits JSON Lines, one per test: `{"name","passed","expected","actual"}`.
 - Use **sections** (Basics, Conditionals, Loops, …), not difficulty levels or tags. A section is the parent folder; every exercise has exactly one. Free navigation, no required order.
 - No metadata file. The exercise `id` is its folder name (`001-sum`), unique across the whole repo, and is the only identifier (no separate slug). Section name/order come from the section folder name (`01-basics`); the title is the first `# Heading` in `exercise.md`. Never store these values a second time.
 - The backend builds an `id -> path` index by scanning `exercises/*/*/`; never build a filesystem path from a client-supplied `exerciseId`.
-- Harness is a small custom C++ one; tests continue after a failure and report each independently.
+- Harness is a small custom C++ one (`backend/sandbox/harness.h`); tests continue after a failure and report each independently, and `main` in `tests.cpp` returns 0 after all tests run so a failed test is distinguishable from a crash.
+- The runner builds a single `main.cpp` by concatenating, in order: student code, `harness.h`, the exercise's `tests.cpp`. Exercises do not carry a reference `solution.cpp`.
 
 ## Stack and tooling
 
