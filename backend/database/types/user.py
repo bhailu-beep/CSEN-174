@@ -27,3 +27,14 @@ class UserRepository:
             if result is None:
                 raise ValueError(f"User with id {id} not found")
             return User(id=result['id'], username=result['username'], hashed_password=result['hashed_password'])
+
+    async def get_user_by_login(self, username: str, hashed_password: str) -> User:
+        async with DbConnection.pool.acquire() as conn:
+            result = await conn.fetchrow(
+                "SELECT id, username, hashed_password FROM users WHERE username = $1 AND hashed_password = $2",
+                username,
+                hashed_password
+            )
+            if result is None:
+                raise ValueError(f"User, hashed password ({username}, {hashed_password}) not found")
+            return User(id=result['id'], username=result['username'], hashed_password=result['hashed_password'])
