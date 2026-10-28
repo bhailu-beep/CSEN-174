@@ -2,24 +2,22 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+import asyncpg
 import pytest
 from database.connection import DbConnection
 from database.types.user import User, UserRepository
-from testcontainers.community.postgres import PostgresContainer
-from tests.database import create_pool
 
 
 @pytest.fixture
-async def user_repository(ephemeral_postgres: PostgresContainer) -> AsyncIterator[UserRepository]:
-    pool = await create_pool(ephemeral_postgres)
-    DbConnection.pool = pool
+async def user_repository(db_pool: asyncpg.Pool) -> AsyncIterator[UserRepository]:
+    DbConnection.pool = db_pool
     try:
-        async with pool.acquire() as conn:
+        async with db_pool.acquire() as conn:
             await conn.execute("TRUNCATE TABLE users RESTART IDENTITY")
         yield UserRepository()
     finally:
         DbConnection.pool = None
-        await pool.close()
+
 
 async def test_create_user_returns_the_inserted_row(user_repository: UserRepository) -> None:
     created = await user_repository.create_user("ada", "hash-1")

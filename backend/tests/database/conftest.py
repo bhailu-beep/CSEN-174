@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import asyncpg
@@ -10,7 +10,7 @@ from docker.errors import DockerException
 from testcontainers.community.postgres import PostgresContainer
 
 POSTGRES_IMAGE = "postgres:16-alpine"
-SCHEMA_PATH = Path(__file__).resolve().parents[1] / "setup.sql"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "setup.sql"
 
 
 def _apply_schema(container: PostgresContainer) -> None:
@@ -62,7 +62,7 @@ def ephemeral_postgres() -> Iterator[PostgresContainer]:
         container.stop()
 
 
-async def create_pool(container: PostgresContainer) -> asyncpg.Pool:
+async def _create_pool(container: PostgresContainer) -> asyncpg.Pool:
     last_error: Exception | None = None
     for _ in range(20):
         try:
@@ -81,3 +81,12 @@ async def create_pool(container: PostgresContainer) -> asyncpg.Pool:
             await asyncio.sleep(0.3)
     assert last_error is not None
     raise last_error
+
+
+@pytest.fixture
+async def db_pool(ephemeral_postgres: PostgresContainer) -> AsyncIterator[asyncpg.Pool]:
+    pool = await _create_pool(ephemeral_postgres)
+    try:
+        yield pool
+    finally:
+        await pool.close()
