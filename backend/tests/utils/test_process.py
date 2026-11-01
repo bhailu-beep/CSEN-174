@@ -4,7 +4,7 @@ import io
 import subprocess
 from unittest.mock import MagicMock
 
-from runner.util.process import communicate_capped
+from utils.process import communicate_capped
 
 
 def _process(stdout: bytes = b"", stderr: bytes = b"", *, hang: bool = False) -> MagicMock:

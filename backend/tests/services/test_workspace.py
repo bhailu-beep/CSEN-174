@@ -1,17 +1,24 @@
 from pathlib import Path
 import pytest
 
-from runner.services.workspace_service import INPUT_FILENAME, SOURCE_FILENAME, WorkspaceService
+from services.workspace import (
+    STUDENT_FILENAME,
+    TESTER_FILENAME,
+    TESTS_FILENAME,
+    WorkspaceService,
+)
 
 
 def test_write_files_normalizes_newlines(tmp_path: Path) -> None:
     workspace = WorkspaceService()
-    workspace.write_files(tmp_path, "int main() {\r\n}\r", "a\r\nb")
+    workspace.write_files(tmp_path, "int main() {\r\n}\r", "int main() {\r\n}\r", "name: a\r\n")
 
-    source = (tmp_path / SOURCE_FILENAME).read_text(encoding="utf-8")
-    stdin = (tmp_path / INPUT_FILENAME).read_text(encoding="utf-8")
+    source = (tmp_path / STUDENT_FILENAME).read_text(encoding="utf-8")
+    tester = (tmp_path / TESTER_FILENAME).read_text(encoding="utf-8")
+    tests = (tmp_path / TESTS_FILENAME).read_text(encoding="utf-8")
     assert source == "int main() {\n}\n"
-    assert stdin == "a\nb"
+    assert tester == "int main() {\n}\n"
+    assert tests == "name: a\n"
 
 
 def test_open_creates_and_deletes_directory() -> None:
@@ -50,9 +57,10 @@ def test_open_gives_each_call_its_own_directory() -> None:
         assert not (second / "marker.txt").exists()
 
 
-def test_write_files_creates_both_files_even_with_empty_stdin(tmp_path: Path) -> None:
-    WorkspaceService().write_files(tmp_path, "int main() { return 0; }\n", "")
+def test_write_files_creates_the_sandbox_files(tmp_path: Path) -> None:
+    WorkspaceService().write_files(tmp_path, "int main() { return 0; }\n", "int main() { return 0; }\n", "")
 
-    assert (tmp_path / SOURCE_FILENAME).is_file()
-    assert (tmp_path / INPUT_FILENAME).is_file()
-    assert (tmp_path / INPUT_FILENAME).read_text(encoding="utf-8") == ""
+    assert (tmp_path / STUDENT_FILENAME).is_file()
+    assert (tmp_path / TESTER_FILENAME).is_file()
+    assert (tmp_path / TESTS_FILENAME).read_text(encoding="utf-8") == ""
+    assert (tmp_path / "harness.h").is_file()

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from ..config import DEFAULT_RUN_TIMEOUT_SECONDS, MAX_SOURCE_BYTES
-from ..domain.result import RunResult, Stage
-from .docker_service import DockerService
-from .workspace_service import WorkspaceService
+from dataclasses import replace
+
+from config import DEFAULT_RUN_TIMEOUT_SECONDS, MAX_SOURCE_BYTES
+from models.result import RunResult, Stage
+from models.tests import TestCase, sandbox_tests, score
+from services.docker import DockerService
+from services.workspace import WorkspaceService
 
 
 class CppRunnerService:
@@ -20,8 +23,9 @@ class CppRunnerService:
     def run(
         self,
         source: str,
-        stdin: str = "",
         *,
+        tester: str,
+        tests: list[TestCase],
         timeout_seconds: float = DEFAULT_RUN_TIMEOUT_SECONDS,
     ) -> RunResult:
         if timeout_seconds <= 0:
@@ -56,5 +60,9 @@ class CppRunnerService:
             return image_error
 
         with self.workspace.open() as workdir:
-            self.workspace.write_files(workdir, source, stdin)
-            return self.docker.run_container(workdir, timeout_seconds)
+            self.workspace.write_files(workdir, source, tester, sandbox_tests(tests))
+            result = self.docker.run_container(workdir, timeout_seconds)
+
+        if result.ok and result.exit_code == 0 and not result.timed_out:
+            result = replace(result, tests=tuple(score(tests, result.stdout)))
+        return result

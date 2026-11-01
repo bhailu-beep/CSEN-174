@@ -3,7 +3,7 @@
 from pathlib import Path
 
 IMAGE_NAME = "completec-cpp-sandbox"  # Docker image tag built from backend/sandbox
-SANDBOX_DIR = Path(__file__).resolve().parent.parent / "sandbox"
+SANDBOX_DIR = Path(__file__).resolve().parent / "sandbox"
 
 # Distinct sandbox exit codes so Python can tell compile failure from a student program.
 COMPILE_EXIT = 254  # g++ failed

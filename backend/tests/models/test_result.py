@@ -1,5 +1,5 @@
-from runner.config import COMPILE_EXIT, COMPILE_TIMEOUT_EXIT, GNU_TIMEOUT_EXIT
-from runner.domain.result import RunResult, Stage
+from config import COMPILE_EXIT, COMPILE_TIMEOUT_EXIT, GNU_TIMEOUT_EXIT
+from models.result import RunResult, Stage
 
 
 def test_error_sets_error_stage() -> None:

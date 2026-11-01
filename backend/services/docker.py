@@ -7,12 +7,12 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from ..config import (COMPILE_TIMEOUT_SECONDS, CPUS, DOCKER_GRACE_SECONDS,
+from config import (COMPILE_TIMEOUT_SECONDS, CPUS, DOCKER_GRACE_SECONDS,
                       IMAGE_NAME, MEMORY_MB, OUTPUT_CAP_BYTES, PIDS_LIMIT,
                       SANDBOX_DIR, SANDBOX_USER, TMPFS_SIZE)
-from ..domain.result import RunResult, Stage
-from ..util.process import communicate_capped
-from ..util.text import decode
+from models.result import RunResult, Stage
+from utils.process import communicate_capped
+from utils.text import decode
 
 RunFn = Callable[..., subprocess.CompletedProcess[bytes]]
 PopenFn = Callable[..., subprocess.Popen[bytes]]

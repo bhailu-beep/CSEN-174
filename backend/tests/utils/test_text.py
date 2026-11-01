@@ -1,4 +1,4 @@
-from runner.util.text import decode, normalize_newlines
+from utils.text import decode, normalize_newlines
 
 
 def test_normalize_newlines_converts_windows_and_old_mac() -> None:

@@ -1,0 +1,45 @@
+# One input per argument, then expected. A blank line separates cases.
+
+input: sunny
+input: 80
+expected: false
+
+input: sunny
+input: 25
+expected: false
+
+input: sunny
+input: 24
+expected: true
+
+input: sunny
+input: 0
+expected: true
+
+input: rainy
+input: 80
+expected: true
+
+input: rainy
+input: 50
+expected: true
+
+input: rainy
+input: 49
+expected: false
+
+input: rainy
+input: 0
+expected: false
+
+input: hail
+input: 80
+expected: true
+
+input: hail
+input: 50
+expected: true
+
+input: hail
+input: 0
+expected: true

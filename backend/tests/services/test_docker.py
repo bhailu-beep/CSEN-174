@@ -4,15 +4,15 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
-from runner.config import (
+from config import (
     COMPILE_TIMEOUT_SECONDS,
     DOCKER_GRACE_SECONDS,
     IMAGE_NAME,
     OUTPUT_CAP_BYTES,
     SANDBOX_DIR,
 )
-from runner.domain.result import Stage
-from runner.services.docker_service import DockerService
+from models.result import Stage
+from services.docker import DockerService
 
 
 def _completed(command: list[str], returncode: int = 0, stdout: bytes = b"", stderr: bytes = b""):

@@ -65,7 +65,7 @@ The first substantial release should include:
 - Custom lightweight C++ test harness
 - JSON Lines (JSONL) test output
 - C++ compilation and execution in Docker
-- Python sandbox runner (`backend/runner/`) that drives Docker
+- Python sandbox runner (`backend/services/cpp_runner.py`) that drives Docker
 - FastAPI + GraphQL application backend
 - Detailed test results
 - Compilation errors
@@ -229,7 +229,7 @@ FastAPI / Python / GraphQL
         |
         | in-process Python call
         v
-Sandbox runner (backend/runner/)
+Sandbox runner (`backend/services/cpp_runner.py`)
         |
         | docker CLI
         v
@@ -330,12 +330,10 @@ The exact schema should be designed as implementation begins rather than trying 
 
 ### Python sandbox runner
 
-Code execution lives in a Python package, `backend/runner/`, with the container image in `backend/sandbox/`. It is a library called by the backend, not a separate service.
-
-Current public API (`backend/runner/__init__.py`):
+Code execution lives in `backend/services/` (`CppRunnerService`, `DockerService`, `WorkspaceService`), with result types in `backend/models/` and limits in `backend/config.py`. The container image stays in `backend/sandbox/`. Resolvers call `CppRunnerService.run(...)` in process. There is no separate runner package or execution service.
 
 ```python
-run_cpp(source: str, stdin: str = "", *, timeout_seconds: float = 2.0) -> RunResult
+CppRunnerService.run(source, *, tester, tests, timeout_seconds=2.0) -> RunResult
 ```
 
 Responsibilities include:
@@ -438,18 +436,14 @@ coding-platform/
 │   │   ├── exercises/
 │   │   ├── services/
 │   │   └── ...
-│   ├── runner/               # sandbox runner (exists)
-│   │   ├── __init__.py       # exports run_cpp, RunResult, Stage
-│   │   ├── execute.py        # run_cpp(): validate, workspace, call docker
-│   │   ├── docker.py         # docker checks, image build, docker run, cleanup
-│   │   ├── output.py         # capped stdout/stderr reader
-│   │   ├── result.py         # RunResult, Stage, exit-code classification
-│   │   ├── config.py         # limits and sandbox exit codes
-│   │   └── text.py
+│   ├── services/             # includes cpp_runner.py, docker.py, workspace.py
+│   ├── models/               # RunResult, Stage, parsed tests.txt cases
+│   ├── utils/                # process.py (capped output), text.py
+│   ├── config.py             # limits and sandbox exit codes
 │   ├── sandbox/              # sandbox image (exists)
 │   │   ├── Dockerfile
 │   │   ├── run.sh            # in-container compile + run
-│   │   └── harness.h         # shared test helpers (check, to_str, json_escape)
+│   │   └── harness.h         # load_tests, report, to_str, json_escape
 │   ├── run_code.py           # manual smoke test for the runner
 │   ├── tests/
 │   ├── requirements.txt
@@ -460,7 +454,8 @@ coding-platform/
 │   │   ├── 001-sum/          # exercise (id = "001-sum")
 │   │   │   ├── exercise.md
 │   │   │   ├── starter.cpp
-│   │   │   └── tests.cpp
+│   │   │   ├── tester.cpp
+│   │   │   └── tests.txt
 │   │   └── 002-...
 │   ├── 02-conditionals/
 │   │   └── 003-...
@@ -498,7 +493,8 @@ exercises/
 │   ├── 001-sum/
 │   │   ├── exercise.md
 │   │   ├── starter.cpp
-│   │   └── tests.cpp
+│   │   ├── tester.cpp
+│   │   └── tests.txt
 │   └── 002-max/
 └── 02-conditionals/
     └── 003-is-even/
@@ -517,9 +513,9 @@ There is no separate metadata file. Everything is derived from the folder struct
 | title | the first `# Heading` in `exercise.md` | `Sum` |
 
 Rules:
-- Exercise ids are unique across the **whole** repo, not just within a section (number exercises globally). The id is used in URLs and as the `exerciseId` for `executeCode`.
+- Exercise ids are the numeric folder prefix and are unique within a section, not across the repo. A lesson is identified by its section id plus its exercise id. That pair is used in URLs and as the exercise identity for `executeCode`.
 - The backend scans `exercises/*/*/` at startup and builds an `id -> path` index. It must never build a filesystem path directly from a client-supplied `exerciseId`; it looks the id up in the index and rejects unknown ids.
-- Startup validation should fail loudly on duplicate ids, a missing `exercise.md` heading, or a missing `starter.cpp`/`tests.cpp`.
+- Startup validation should fail loudly on duplicate ids, a missing `exercise.md` heading, or a missing `starter.cpp`, `tester.cpp`, or `tests.txt`.
 
 ### `exercise.md`
 
@@ -545,7 +541,7 @@ int sum(int a, int b) {
 
 ### Hidden tests
 
-`tests.cpp` should remain on the server side (backend/runner/sandbox), never sent to the browser.
+`tester.cpp` and `tests.txt` stay on the server. `tests.txt` lists each case as `name`, one `input` per argument, and `expected`. The browser never receives either file.
 
 The browser should never receive hidden tests as part of a normal exercise request.
 
@@ -569,30 +565,31 @@ The harness should:
 
 ### JSONL output
 
-Use **JSON Lines (JSONL)** so the runner can parse results line-by-line.
+Use **JSON Lines (JSONL)** so each case is one line.
 
-Example:
+The sandbox prints the actual return value:
 
 ```text
-{"name":"sum(2, 3)","passed":true,"expected":"5","actual":"5"}
-{"name":"sum(-1, 5)","passed":false,"expected":"4","actual":"-6"}
+{"actual":"5"}
+{"actual":"-6"}
+```
+
+Python pairs those lines, in order, with the `TestCase` objects loaded from `tests.txt`:
+
+```text
+{"passed":true,"expected":"5","actual":"5"}
+{"passed":false,"expected":"4","actual":"-6"}
 ```
 
 ### Shared harness and build order
 
-The shared helpers live in `backend/sandbox/harness.h` (include-guarded): `json_escape`, `to_str` overloads (defined above the template), and a templated `check(name, expected, actual)` that prints one JSONL line and never exits on a mismatch. Each exercise's `tests.cpp` contains only its test calls and a `main` that returns 0 after all tests run, so the runner can tell a failed test from a crash.
+The shared helpers live in `backend/sandbox/harness.h` (include-guarded): `json_escape`, `to_str` overloads, `load_tests`, and `report(actual)`. `report` prints one JSON line, `{"actual"}`, and does not decide pass or fail. Each exercise's `tester.cpp` includes `student.cpp`, calls the student's function for every loaded case, and returns 0 from `main` after all cases so the runner can tell a wrong answer from a crash.
 
-The runner builds one `main.cpp` by concatenating, in this order:
+`tests.txt` is parsed into `TestCase` objects (`inputs`, `expected`) when the catalog loads. Python writes a copy with the `expected` lines removed into the sandbox and compares each actual with the expected value it kept, in order. A clean exit produces `{"passed","expected","actual"}` for every case. Non-JSON stdout lines are ignored, since student `cout` shares stdout with `report`.
 
-1. the student's code;
-2. `harness.h`;
-3. the exercise's `tests.cpp`.
+`g++` compiles `tester.cpp` only. Quoted includes pull in `student.cpp` and `harness.h` from the same directory. `tester.cpp`, `tests.txt`, and `solution.cpp` live on the lesson. The lesson query sent to the browser includes the description and starter code only. The solution stays out of the sandbox.
 
-Student code comes first so compiler line numbers in student code stay correct. Exercises do not include a reference `solution.cpp`.
-
-Phase 3 notes: it's ok for the source-size limit to apply to the entire combined source, not just the student's code; filter compiler output so it never shows `tests.cpp` lines; and have the JSONL parser skip non-JSON lines, since student `cout` output shares stdout with the results.
-
-The exact JSON schema should be standardized early so that the C++ harness, Python runner, FastAPI GraphQL layer, and frontend all agree on the result format.
+The scored JSON shape is what the Python runner, FastAPI GraphQL layer, and frontend agree on. The sandbox output is only `actual`, in the same order as the test objects.
 
 ### Result model
 
@@ -603,13 +600,11 @@ A failed exercise might eventually become:
   "status": "failed",
   "tests": [
     {
-      "name": "sum(2, 3)",
       "expected": "5",
       "actual": "5",
       "passed": true
     },
     {
-      "name": "sum(-1, 5)",
       "expected": "4",
       "actual": "-6",
       "passed": false
@@ -693,7 +688,7 @@ Map to GraphQL result (passed / failed / compilation_error / timeout / execution
 Next.js displays results
 ```
 
-Compilation and execution happen in the **same** container (one container per submission), distinguished by sandbox-specific exit codes defined in `backend/runner/config.py`.
+Compilation and execution happen in the **same** container (one container per submission), distinguished by sandbox-specific exit codes defined in `backend/config.py`.
 
 ### Temporary workspace
 
@@ -715,7 +710,7 @@ For the initial implementation, Docker provides a practical isolation boundary f
 
 Suggested starting constraints:
 
-| Restriction | Current value (`backend/runner/config.py`) |
+| Restriction | Current value (`backend/config.py`) |
 |---|---|
 | Network | disabled (`--network=none`) |
 | User | non-root (`nobody`, 65534:65534) |
@@ -1099,7 +1094,7 @@ A shared repository that every team member can clone and run locally.
 
 ### Phase 1 — Prove C++ execution in Docker  ✅ Done
 
-Implemented in `backend/runner/` + `backend/sandbox/`; smoke test via `python backend/run_code.py` from `backend/`.
+Implemented in `backend/services/` + `backend/sandbox/`; smoke test via `python backend/run_code.py` from `backend/`.
 
 Before building the web application, prove the hardest infrastructure concept.
 
@@ -1159,7 +1154,7 @@ Student C++ code -> test harness -> JSONL results
 The Python runner already provides request limits, temporary workspaces, compilation, Docker execution, timeouts, output capping and cleanup (see §5). This phase finishes it for exercises.
 
 Remaining work:
-- load an exercise's hidden `tests.cpp` and combine it with the student's code and the harness in the workspace;
+- load an exercise's `tester.cpp` and `tests.txt`, mount the tester with the student's code, and score the sandbox actuals in Python;
 - add a function such as `run_exercise(exercise_id, code)` on top of `run_cpp`;
 - parse the harness's JSONL from stdout and handle malformed output;
 - map runner outcomes to the top-level statuses (`passed`, `failed`, `compilation_error`, `timeout`, `execution_error`), including treating non-zero exit codes / crashes of the test binary as `execution_error` (currently any other exit code is reported `ok`);
@@ -1350,7 +1345,7 @@ Own:
 ### Runner/infrastructure track
 
 Own:
-- Python sandbox runner (`backend/runner/`) and sandbox image (`backend/sandbox/`);
+- Python sandbox runner (`backend/services/`) and sandbox image (`backend/sandbox/`);
 - Docker integration;
 - compilation;
 - timeout/resource handling;
@@ -1741,7 +1736,7 @@ coding-platform/
 └── docs/
 ```
 
-### Step 3 — Prove Docker C++ execution  ✅ Done (`backend/runner`, `backend/sandbox`)
+### Step 3 — Prove Docker C++ execution  ✅ Done (`backend/services`, `backend/sandbox`)
 
 Do not start with the frontend.
 
@@ -1761,7 +1756,8 @@ Create `001-sum` with:
 
 - `exercise.md`;
 - `starter.cpp`;
-- `tests.cpp`.
+- `tester.cpp`;
+- `tests.txt`.
 
 ### Step 5 — Connect the runner to exercises
 

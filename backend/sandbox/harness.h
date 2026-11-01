@@ -1,85 +1,120 @@
-// Shared test-harness helpers. The runner concatenates, in this order:
-//   1. the student's code
-//   2. this file
-//   3. the exercise's tests.cpp (which defines main)
-// so everything the tests need must be declared here, above check().
+// Shared helpers for tester.cpp. The sandbox reports actual return values only.
+// Python reads tests.txt and decides which cases passed.
 #ifndef CPP_PLATFORM_HARNESS_H
 #define CPP_PLATFORM_HARNESS_H
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
-// Handles special characters in output
 inline std::string json_escape(const std::string& s) {
-    std::string json_string = "";
-
-    for (std::size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '\"' or s[i] == '\\') {
+    std::string json_string;
+    for (char character : s) {
+        if (character == '"' || character == '\\') {
             json_string += '\\';
-            json_string += s[i];
-        }
-        else if (s[i] == '\n') {
+            json_string += character;
+        } else if (character == '\n') {
             json_string += "\\n";
-        }
-        else {
-            json_string += s[i];
+        } else {
+            json_string += character;
         }
     }
-
     return json_string;
 }
 
-// to_str overloads: must stay above check() so the template can find them.
-// Add an overload here for any new type a test needs to print.
-inline std::string to_str(bool b) {
-    return b ? "true" : "false";
+// to_str overloads stay above report() so the template can find them.
+inline std::string to_str(bool value) {
+    return value ? "true" : "false";
 }
 
-inline std::string to_str(const std::string& s) {
-    return s;
+inline std::string to_str(const std::string& value) {
+    return value;
 }
 
-inline std::string to_str(const char* s) {
-    return s;
+inline std::string to_str(const char* value) {
+    return value;
 }
 
-inline std::string to_str(char c) {
-    return std::string(1, c);
+inline std::string to_str(char value) {
+    return std::string(1, value);
 }
 
-inline std::string to_str(int n) {
-    return std::to_string(n);
+inline std::string to_str(int value) {
+    return std::to_string(value);
 }
 
-inline std::string to_str(long n) {
-    return std::to_string(n);
+inline std::string to_str(long value) {
+    return std::to_string(value);
 }
 
-inline std::string to_str(double d) {
+inline std::string to_str(double value) {
     std::ostringstream out;
-    out << d;
+    out << value;
     return out.str();
 }
 
-// Checks one test and prints the result as one JSONL line.
-// Never exits or throws on a mismatch, so later tests still run.
-template <typename Expected, typename Actual>
-void check(const std::string& name, const Expected& expected, const Actual& actual) {
-    bool passed = expected == actual;
-    std::string score_output;
+// One case from the sandbox copy of tests.txt. Expected answers are not in that file.
+// Cases stay in file order. There is no name.
+struct TestCase {
+    std::vector<std::string> inputs;
+};
 
-    score_output += "{\"name\": \"";
-    score_output += json_escape(name);
-    score_output += "\", \"passed\": ";
-    score_output += to_str(passed);
-    score_output += ", \"expected\": \"";
-    score_output += json_escape(to_str(expected));
-    score_output += "\", \"actual\": \"";
-    score_output += json_escape(to_str(actual));
-    score_output += "\"}";
+// Blocks separated by a blank line:
+//   input: sunny
+//   input: 80
+// A line "case" is a case with no arguments. Lines starting with # are comments.
+inline std::vector<TestCase> load_tests(const std::string& path = "/src/tests.txt") {
+    std::vector<TestCase> cases;
+    std::ifstream in(path);
+    if (!in) {
+        return cases;
+    }
 
-    std::cout << score_output << std::endl;
+    TestCase current;
+    bool in_case = false;
+    auto flush = [&]() {
+        if (!in_case) {
+            return;
+        }
+        cases.push_back(current);
+        current = TestCase{};
+        in_case = false;
+    };
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.empty()) {
+            flush();
+            continue;
+        }
+        if (line[0] == '#') {
+            continue;
+        }
+        if (line.rfind("expected: ", 0) == 0 || line.rfind("name: ", 0) == 0) {
+            continue;
+        }
+        if (line == "case") {
+            in_case = true;
+            continue;
+        }
+        if (line.rfind("input: ", 0) == 0) {
+            current.inputs.push_back(line.substr(7));
+            in_case = true;
+        }
+    }
+    flush();
+    return cases;
+}
+
+// Prints one JSON line: {"actual"}. Does not compare or stop the run.
+template <typename Actual>
+void report(const Actual& actual) {
+    std::cout << "{\"actual\":\"" << json_escape(to_str(actual)) << "\"}" << std::endl;
 }
 
 #endif  // CPP_PLATFORM_HARNESS_H

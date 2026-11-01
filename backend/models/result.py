@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ..config import COMPILE_EXIT, COMPILE_TIMEOUT_EXIT, GNU_TIMEOUT_EXIT
+from config import COMPILE_EXIT, COMPILE_TIMEOUT_EXIT, GNU_TIMEOUT_EXIT
+from models.tests import TestResult
 
 
 class Stage(StrEnum):
@@ -23,6 +24,7 @@ class RunResult:
     exit_code: int | None
     timed_out: bool
     message: str
+    tests: tuple[TestResult, ...] = ()
 
     @classmethod
     def error(cls, message: str, stdout: str = "", stderr: str = "") -> RunResult:

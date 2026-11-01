@@ -44,7 +44,7 @@ Docker sandbox (backend/sandbox/) -> g++ + C++ test harness
 
 Top-level statuses: `passed`, `failed`, `compilation_error`, `timeout`, `execution_error`.
 
-Harness emits JSON Lines, one per test: `{"name","passed","expected","actual"}`. The harness, runner, GraphQL schema, and frontend must agree on this shape — if you change it, update all four layers and the docs together. The runner's internal `Stage`/`timed_out`/`exit_code` fields are not part of this contract; the backend maps them to the top-level statuses above.
+The sandbox prints one JSON line per test, `{"actual"}`, in test order. Python compares those with the lesson's `TestCase` objects and produces `{"passed","expected","actual"}`. The runner, GraphQL schema, and frontend agree on that scored shape — if you change it, update those layers and the docs together. The runner's internal `Stage`/`timed_out`/`exit_code` fields are not part of this contract; the backend maps them to the top-level statuses above.
 
 ## Exercise conventions
 
