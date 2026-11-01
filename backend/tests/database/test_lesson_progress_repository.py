@@ -25,7 +25,7 @@ async def lesson_progress(db_pool: asyncpg.Pool) -> AsyncIterator[LessonProgress
     try:
         async with db_pool.acquire() as conn:
             await conn.execute("TRUNCATE TABLE lesson_progress, users RESTART IDENTITY")
-        yield LessonProgressRepository()
+            yield LessonProgressRepository(conn)
     finally:
         DbConnection.pool = None
 

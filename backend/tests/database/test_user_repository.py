@@ -14,7 +14,7 @@ async def user_repository(db_pool: asyncpg.Pool) -> AsyncIterator[UserRepository
     try:
         async with db_pool.acquire() as conn:
             await conn.execute("TRUNCATE TABLE users RESTART IDENTITY CASCADE")
-        yield UserRepository()
+            yield UserRepository(conn)
     finally:
         DbConnection.pool = None
 

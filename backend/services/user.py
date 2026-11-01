@@ -10,8 +10,8 @@ _JWT_ALGORITHM = "HS256"
 _DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"password", bcrypt.gensalt())
 
 class UserService:
-    def __init__(self, user_repository: UserRepository | None = None):
-        self.user_repository = user_repository or UserRepository()
+    def __init__(self, user_repository: UserRepository):
+        self.user_repository = user_repository
 
     def _hash_password(self, password: str) -> str:
         password_bytes = password.encode('utf-8')
