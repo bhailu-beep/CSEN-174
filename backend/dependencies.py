@@ -5,8 +5,10 @@ from asyncpg import Connection
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from database.connection import DbConnection
+from database.types.lesson import LessonRepository
 from database.types.lesson_progress import LessonProgressRepository
 from database.types.user import User, UserRepository
+from services.lesson import LessonService
 from services.lesson_progress import LessonProgressService
 from services.user import UserService
 
@@ -26,6 +28,20 @@ def get_lesson_progress_repository(
     connection: Annotated[Connection, Depends(get_connection)],
 ) -> LessonProgressRepository:
     return LessonProgressRepository(connection)
+
+
+# One catalog for the process. The repository reads the exercises folder on first use.
+_lesson_repository = LessonRepository()
+
+
+def get_lesson_repository() -> LessonRepository:
+    return _lesson_repository
+
+
+def get_lesson_service(
+    repository: Annotated[LessonRepository, Depends(get_lesson_repository)],
+) -> LessonService:
+    return LessonService(repository)
 
 
 def get_user_service(repository: Annotated[UserRepository, Depends(get_user_repository)]) -> UserService:
