@@ -6,7 +6,7 @@ import jwt
 from decouple import config
 from database.types.user import User, UserRepository
 
-ACCESS_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
+ACCESS_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60 # 7 days
 _JWT_ALGORITHM = "HS256"
 _DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"password", bcrypt.gensalt())
 
