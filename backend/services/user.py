@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -13,11 +14,14 @@ class UserService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
 
-    def _hash_password(self, password: str) -> str:
-        password_bytes = password.encode('utf-8')
-        salt = bcrypt.gensalt()
-        hashed = bcrypt.hashpw(password_bytes, salt)
-        return hashed.decode('utf-8')
+    async def _hash_password(self, password: str) -> str:
+        def hash_password() -> str:
+            password_bytes = password.encode('utf-8')
+            salt = bcrypt.gensalt()
+            hashed = bcrypt.hashpw(password_bytes, salt)
+            return hashed.decode('utf-8')
+
+        return await asyncio.to_thread(hash_password)
 
     def _password_matches(self, password: str, hashed_password: str | bytes) -> bool:
         hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
@@ -32,9 +36,9 @@ class UserService:
         except ValueError:
             # for security reasons, we don't want to leak information about the existence of the user.
             # so we do a fake password check to prevent timing attacks
-            self._password_matches(attempted_password, _DUMMY_PASSWORD_HASH)
+            await asyncio.to_thread(self._password_matches, attempted_password, _DUMMY_PASSWORD_HASH)
             return None
-        if not self._password_matches(attempted_password, user.hashed_password):
+        if not await asyncio.to_thread(self._password_matches, attempted_password, user.hashed_password):
             return None
         return user
 
