@@ -30,6 +30,8 @@ class UserService:
         try:
             user = await self.user_repository.get_user_by_username(attempted_username)
         except ValueError:
+            # for security reasons, we don't want to leak information about the existence of the user.
+            # so we do a fake password check to prevent timing attacks
             self._password_matches(attempted_password, _DUMMY_PASSWORD_HASH)
             return None
         if not self._password_matches(attempted_password, user.hashed_password):
