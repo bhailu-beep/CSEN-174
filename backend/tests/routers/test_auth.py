@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from database.types.user import User
 from dependencies import get_current_user
-from routers.auth import LoginRequest, PublicUser, login, me
+from routers.auth import LoginRequest, PublicUser, RegisterRequest, login, me, register
 
 USER = User(id=4, username="ada", hashed_password="irrelevant")
 
@@ -53,3 +53,27 @@ async def test_get_current_user_rejects_an_invalid_token() -> None:
 
 async def test_me_returns_the_user_without_the_password_hash() -> None:
     assert await me(USER) == PublicUser(id=4, username="ada")
+
+
+async def test_register_route_sets_a_browser_cookie() -> None:
+    response = Response()
+    users = _users()
+    users.create_user.return_value = "signed-token"
+
+    body = await register(RegisterRequest(username="grace", password="secret"), response, user_service=users)
+
+    assert body == {"access_token": "signed-token"}
+    users.create_user.assert_awaited_once_with("grace", "secret")
+    cookie = response.headers["set-cookie"].lower()
+    assert "access_token=signed-token" in cookie
+    assert "httponly" in cookie
+
+
+async def test_register_route_returns_400_when_registration_fails() -> None:
+    users = _users()
+    users.create_user.return_value = None
+
+    with pytest.raises(HTTPException) as exc:
+        await register(RegisterRequest(username="grace", password="secret"), Response(), user_service=users)
+
+    assert exc.value.status_code == 400
