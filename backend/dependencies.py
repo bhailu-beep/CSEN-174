@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Annotated
 
 from asyncpg import Connection
 from fastapi import Cookie, Depends, HTTPException
@@ -16,29 +17,29 @@ async def get_connection() -> AsyncIterator[Connection]:
         yield connection
 
 
-def get_user_repository(connection: Connection = Depends(get_connection)) -> UserRepository:
+def get_user_repository(connection: Annotated[Connection, Depends(get_connection)]) -> UserRepository:
     return UserRepository(connection)
 
 
 def get_lesson_progress_repository(
-    connection: Connection = Depends(get_connection),
+    connection: Annotated[Connection, Depends(get_connection)],
 ) -> LessonProgressRepository:
     return LessonProgressRepository(connection)
 
 
-def get_user_service(repository: UserRepository = Depends(get_user_repository)) -> UserService:
+def get_user_service(repository: Annotated[UserRepository, Depends(get_user_repository)]) -> UserService:
     return UserService(repository)
 
 
 def get_lesson_progress_service(
-    repository: LessonProgressRepository = Depends(get_lesson_progress_repository),
+    repository: Annotated[LessonProgressRepository, Depends(get_lesson_progress_repository)],
 ) -> LessonProgressService:
     return LessonProgressService(repository)
 
 
 async def get_current_user(
-    users: UserService = Depends(get_user_service),
-    access_token: str | None = Cookie(default=None),
+    users: Annotated[UserService, Depends(get_user_service)],
+    access_token: Annotated[str | None, Cookie()] = None,
 ) -> User:
     if access_token is None:
         raise HTTPException(status_code=401, detail="Not authenticated")

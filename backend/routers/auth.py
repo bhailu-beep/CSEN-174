@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from database.types.user import User
@@ -18,7 +20,7 @@ class PublicUser(BaseModel):
 async def login(
     body: LoginRequest,
     response: Response,
-    users: UserService = Depends(get_user_service),
+    users: Annotated[UserService, Depends(get_user_service)],
 ):
     token = await users.login(body.username, body.password)
     if token is None:
@@ -34,7 +36,7 @@ async def login(
     return {"access_token": token}
 
 @router.get("/me", response_model = PublicUser)
-async def me(user: User = Depends(get_current_user)) -> PublicUser:
+async def me(user: Annotated[User, Depends(get_current_user)]) -> PublicUser:
     return PublicUser(id = user.id, username = user.username)
 
 @router.post("/register")
