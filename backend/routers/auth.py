@@ -20,9 +20,9 @@ class PublicUser(BaseModel):
 async def login(
     body: LoginRequest,
     response: Response,
-    users: Annotated[UserService, Depends(get_user_service)],
+    user_service: Annotated[UserService, Depends(get_user_service)],
 ):
-    token = await users.login(body.username, body.password)
+    token = await user_service.login(body.username, body.password)
     if token is None:
         raise HTTPException(status_code = 401, detail = "Invalid username or password")
     response.set_cookie(
@@ -35,10 +35,29 @@ async def login(
     )
     return {"access_token": token}
 
-@router.get("/me", response_model = PublicUser)
+@router.get("/me")
 async def me(user: Annotated[User, Depends(get_current_user)]) -> PublicUser:
     return PublicUser(id = user.id, username = user.username)
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
 @router.post("/register")
-async def register(request: Request):
-    return {"message": "Hello, World!"}
+async def register(
+    body: RegisterRequest,
+    response: Response,
+    user_service: Annotated[UserService, Depends(get_user_service)],
+):
+    token = await user_service.create_user(body.username, body.password)
+    if token is None:
+        raise HTTPException(status_code = 400, detail = "Failed to register user")
+    response.set_cookie(
+        key = "access_token",
+        value = token,
+        max_age = ACCESS_TOKEN_TTL_SECONDS,
+        httponly = True,
+        samesite = "lax",
+        path = "/",
+    )
+    return {"access_token": token}

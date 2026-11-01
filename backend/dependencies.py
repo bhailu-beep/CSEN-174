@@ -2,7 +2,8 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from asyncpg import Connection
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from database.connection import DbConnection
 from database.types.lesson_progress import LessonProgressRepository
 from database.types.user import User, UserRepository
@@ -39,11 +40,13 @@ def get_lesson_progress_service(
 
 async def get_current_user(
     users: Annotated[UserService, Depends(get_user_service)],
-    access_token: Annotated[str | None, Cookie()] = None,
+    credential: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
 ) -> User:
-    if access_token is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user = await users.user_from_token(access_token)
+    user = await users.user_from_token(credential.credentials)
     if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
     return user
