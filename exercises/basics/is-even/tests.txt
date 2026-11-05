@@ -1,0 +1,11 @@
+input: 4
+expected: true
+
+input: 7
+expected: false
+
+input: 0
+expected: true
+
+input: -2
+expected: true

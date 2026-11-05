@@ -66,7 +66,7 @@ The first substantial release should include:
 - JSON Lines (JSONL) test output
 - C++ compilation and execution in Docker
 - Python sandbox runner (`backend/services/cpp_runner.py`) that drives Docker
-- FastAPI + GraphQL application backend
+- FastAPI application backend (JSON HTTP routes)
 - Detailed test results
 - Compilation errors
 - Timeout handling
@@ -222,10 +222,10 @@ The project has two major application layers plus an isolated sandbox:
 Frontend
 Next.js / React / TypeScript
         |
-        | GraphQL
+        | HTTP JSON
         v
 Application Backend
-FastAPI / Python / GraphQL
+FastAPI / Python
         |
         | in-process Python call
         v
@@ -265,68 +265,69 @@ The frontend should **not** know:
 FastAPI is the application's main backend/API layer.
 
 Responsibilities include:
-- exposing the GraphQL API;
+- exposing JSON HTTP routes;
 - validating application-level requests;
 - serving exercise metadata/content to the frontend;
 - coordinating execution requests;
 - calling the sandbox runner;
-- converting runner results into the GraphQL response model;
+- converting runner results into the JSON response;
 - providing a future home for authentication, users, progress, submissions, etc.
 
 The backend must not compile or run arbitrary C++ on the host. It only calls the runner, which launches a locked-down Docker container; all untrusted code runs inside that container.
 
-The runner uses blocking `subprocess` calls, so resolvers that call it should be sync (run in FastAPI's threadpool) or wrap the call in `run_in_threadpool`, rather than blocking the event loop.
+The runner uses blocking `subprocess` calls, so handlers that call it should be sync (run in FastAPI's threadpool) or wrap the call in `run_in_threadpool`, rather than blocking the event loop.
 
-### GraphQL
+### HTTP API
 
-GraphQL is the primary API between the Next.js frontend and FastAPI.
+JSON over HTTP is the API between the Next.js frontend and FastAPI. Routes live in `backend/routers/`, the same style as the existing auth routes. There is no GraphQL layer.
 
-The initial schema can expose concepts such as:
+The initial routes can expose concepts such as:
 
-```graphql
-query {
-  sections {
-    id            # e.g. "01-basics"
-    name          # e.g. "Basics"
-    exercises {
-      id          # e.g. "001-sum"
-      title
-    }
+```text
+GET /lessons
+```
+
+```json
+[
+  {
+    "id": "basics",
+    "name": "Basics",
+    "exercises": [{ "id": "sum", "title": "Sum Two Numbers" }]
   }
+]
+```
+
+```text
+GET /lessons/basics/exercises/sum
+```
+
+```json
+{
+  "title": "Sum Two Numbers",
+  "lesson": "basics",
+  "description": "Write a function that returns the sum of two integers.",
+  "starterCode": "int sum(int a, int b) {\n}"
 }
 ```
 
-```graphql
-query {
-  exercise(id: "001-sum") {
-    title
-    section
-    description
-    starterCode
-  }
+And a run request:
+
+```text
+POST /lessons/basics/exercises/sum/run
+```
+
+```json
+{ "code": "int sum(int a, int b) { return a + b; }" }
+```
+
+```json
+{
+  "status": "passed",
+  "tests": [{ "passed": true, "expected": "5", "actual": "5" }]
 }
 ```
 
-And an execution mutation such as:
-
-```graphql
-mutation {
-  executeCode(
-    exerciseId: "001-sum"
-    code: "int sum(int a, int b) { return a + b; }"
-  ) {
-    status
-    tests {
-      name
-      passed
-      expected
-      actual
-    }
-  }
-}
-```
-
-The exact schema should be designed as implementation begins rather than trying to predict every future feature now.
+The exact routes should be designed as implementation begins rather than trying to predict every future feature now.
 
 ### Python sandbox runner
 
@@ -352,7 +353,7 @@ Responsibilities include:
 
 An earlier version of this plan used a Node.js + TypeScript service behind `POST /execute`. It was dropped: the runner was implemented in Python inside `backend/`, and an extra HTTP hop, second language runtime and second deployment would add complexity without adding isolation. The isolation boundary is the Docker container, not the process that launches it.
 
-If execution ever needs to scale independently (queues/workers, dedicated execution hosts), the runner package can be lifted behind an HTTP interface later without changing the GraphQL layer.
+If execution ever needs to scale independently (queues/workers, dedicated execution hosts), the runner package can be lifted behind its own HTTP interface later without changing the application routes.
 
 ---
 
@@ -370,8 +371,7 @@ If execution ever needs to scale independently (queues/workers, dedicated execut
 
 - Python 3.11+
 - FastAPI
-- GraphQL
-- A Python GraphQL library selected during implementation (any ASGI-compatible library works with FastAPI)
+- Pydantic request and response models
 
 ### Sandbox Runner
 
@@ -425,14 +425,13 @@ coding-platform/
 │   │   ├── RunButton.tsx
 │   │   └── TestResults.tsx
 │   ├── lib/
-│   │   ├── graphql/
 │   │   ├── exercises/
 │   │   └── storage/
 │   └── package.json
 │
 ├── backend/
 │   ├── app/                  # FastAPI app (not yet created)
-│   │   ├── graphql/
+│   │   ├── routers/
 │   │   ├── exercises/
 │   │   ├── services/
 │   │   └── ...
@@ -450,15 +449,13 @@ coding-platform/
 │   └── README.md
 │
 ├── exercises/
-│   ├── 01-basics/            # section
-│   │   ├── 001-sum/          # exercise (id = "001-sum")
-│   │   │   ├── exercise.md
-│   │   │   ├── starter.cpp
+│   ├── basics/               # lesson (id = "basics")
+│   │   ├── sum/              # exercise (id = "sum")
 │   │   │   ├── tester.cpp
 │   │   │   └── tests.txt
-│   │   └── 002-...
-│   ├── 02-conditionals/
-│   │   └── 003-...
+│   │   └── to-fahrenheit/
+│   ├── conditionals/
+│   │   └── max-of-three/
 │   └── ...
 │
 ├── docs/
@@ -474,7 +471,7 @@ The exact folder names can change as implementation progresses. The important se
 
 ```text
 web/       -> frontend
-backend/   -> FastAPI + GraphQL + sandbox runner (runner/) + sandbox image (sandbox/)
+backend/   -> FastAPI + sandbox runner (runner/) + sandbox image (sandbox/)
 exercises/ -> exercise definitions and hidden tests
 docs/      -> project documentation
 ```
@@ -483,69 +480,40 @@ docs/      -> project documentation
 
 ## 8. Exercise Format
 
-Each exercise should be self-contained, and lives inside exactly one section folder.
+Each exercise should be self-contained, and lives inside exactly one lesson folder.
 
 Example:
 
 ```text
 exercises/
-├── 01-basics/
-│   ├── 001-sum/
-│   │   ├── exercise.md
-│   │   ├── starter.cpp
+├── basics/
+│   ├── sum/
 │   │   ├── tester.cpp
 │   │   └── tests.txt
-│   └── 002-max/
-└── 02-conditionals/
-    └── 003-is-even/
+│   └── to-fahrenheit/
+└── conditionals/
+    └── max-of-three/
 ```
 
-### Sections, ids and metadata
+### Lessons, ids and metadata
 
-There is no separate metadata file. Everything is derived from the folder structure and `exercise.md`, so nothing is stored twice:
+A lesson is a group of exercises. Problem text, examples, hints, and starter code live in the frontend. An exercise folder on the backend holds only the files needed to run hidden tests:
 
 | Value | Where it comes from | Example |
 |---|---|---|
-| section id | section folder name | `01-basics` |
-| section name | section folder name with the numeric prefix removed, hyphens turned into spaces, capitalized | `Basics` |
-| section order | the numeric prefix of the section folder | `01` before `02` |
-| exercise id | exercise folder name | `001-sum` |
-| title | the first `# Heading` in `exercise.md` | `Sum` |
+| lesson id | lesson folder name | `basics` |
+| lesson name | lesson folder name, hyphens turned into spaces, capitalized | `Basics` |
+| exercise id | exercise folder name | `sum` |
 
 Rules:
-- Exercise ids are the numeric folder prefix and are unique within a section, not across the repo. A lesson is identified by its section id plus its exercise id. That pair is used in URLs and as the exercise identity for `executeCode`.
-- The backend scans `exercises/*/*/` at startup and builds an `id -> path` index. It must never build a filesystem path directly from a client-supplied `exerciseId`; it looks the id up in the index and rejects unknown ids.
-- Startup validation should fail loudly on duplicate ids, a missing `exercise.md` heading, or a missing `starter.cpp`, `tester.cpp`, or `tests.txt`.
-
-### `exercise.md`
-
-```markdown
-# Sum
-
-Write a function that returns the sum of two integers.
-
-## Examples
-
-`sum(2, 3)` → `5`
-
-`sum(-1, 5)` → `4`
-```
-
-### `starter.cpp`
-
-```cpp
-int sum(int a, int b) {
-    // Your code here
-}
-```
+- Ids are lowercase slugs, not numbers. Adding an exercise means adding a folder; existing ids stay put.
+- An exercise id is unique within its lesson, not across the repo. The exercise identity for `executeCode` is the lesson id plus the exercise id.
+- The backend scans `exercises/*/*/` at startup and builds a `(lesson id, exercise id) -> path` index. It must never build a filesystem path directly from a client-supplied id; it looks the pair up in the index and rejects unknown ids.
+- Startup validation should fail loudly on a folder that is not a slug, or a missing `tester.cpp` or `tests.txt`. The order students see is the frontend list, not the folder sort.
 
 ### Hidden tests
 
-`tester.cpp` and `tests.txt` stay on the server. `tests.txt` lists each case as `name`, one `input` per argument, and `expected`. The browser never receives either file.
-
-The browser should never receive hidden tests as part of a normal exercise request.
-
-The team should avoid duplicating metadata in multiple places. If a new piece of per-exercise data is needed later (for example optional tags), prefer extending `exercise.md` or adding one clearly documented file rather than repeating existing values.
+`tester.cpp` and `tests.txt` stay on the server. `tests.txt` lists one `input` per argument, then `expected`. A blank line separates cases. The browser never receives either file.
 
 ---
 
@@ -583,13 +551,13 @@ Python pairs those lines, in order, with the `TestCase` objects loaded from `tes
 
 ### Shared harness and build order
 
-The shared helpers live in `backend/sandbox/harness.h` (include-guarded): `json_escape`, `to_str` overloads, `load_tests`, and `report(actual)`. `report` prints one JSON line, `{"actual"}`, and does not decide pass or fail. Each exercise's `tester.cpp` includes `student.cpp`, calls the student's function for every loaded case, and returns 0 from `main` after all cases so the runner can tell a wrong answer from a crash.
+The shared helpers live in `backend/sandbox/harness.h` (include-guarded): `json_escape`, `to_str` overloads, `load_tests`, and `report(actual)`. `report` prints one JSON line, `{"actual"}`, and does not decide pass or fail. Each exercise's `tester.cpp` includes `solution.cpp`, calls the student's function for every loaded case, and returns 0 from `main` after all cases so the runner can tell a wrong answer from a crash.
 
 `tests.txt` is parsed into `TestCase` objects (`inputs`, `expected`) when the catalog loads. Python writes a copy with the `expected` lines removed into the sandbox and compares each actual with the expected value it kept, in order. A clean exit produces `{"passed","expected","actual"}` for every case. Non-JSON stdout lines are ignored, since student `cout` shares stdout with `report`.
 
-`g++` compiles `tester.cpp` only. Quoted includes pull in `student.cpp` and `harness.h` from the same directory. `tester.cpp`, `tests.txt`, and `solution.cpp` live on the lesson. The lesson query sent to the browser includes the description and starter code only. The solution stays out of the sandbox.
+`g++` compiles `tester.cpp` only. Quoted includes pull in `solution.cpp` and `harness.h` from the same directory. The catalog stores `tester.cpp` and the parsed test cases. Descriptions and starter code stay in the frontend.
 
-The scored JSON shape is what the Python runner, FastAPI GraphQL layer, and frontend agree on. The sandbox output is only `actual`, in the same order as the test objects.
+The scored JSON shape is what the Python runner, FastAPI routes, and frontend agree on. The sandbox output is only `actual`, in the same order as the test objects.
 
 ### Result model
 
@@ -648,10 +616,10 @@ The execution path looks like this:
 User clicks Run
        |
        v
-Next.js sends GraphQL mutation
+Next.js sends POST /lessons/{lessonId}/exercises/{exerciseId}/run
        |
        v
-FastAPI resolver (validates exerciseId + code)
+FastAPI route (validates lesson id, exercise id, and code)
        |
        v
 runner.run_cpp(...)   [in-process Python call]
@@ -682,7 +650,7 @@ Runner classifies exit code, applies output cap / wall-clock timeout
 Parse JSONL from stdout (harness phase)
        |
        v
-Map to GraphQL result (passed / failed / compilation_error / timeout / execution_error)
+Map to JSON result (passed / failed / compilation_error / timeout / execution_error)
        |
        v
 Next.js displays results
@@ -755,49 +723,49 @@ If the platform eventually has significant public usage, stronger isolation, ded
 
 ---
 
-## 12. GraphQL API Design
+## 12. HTTP API Design
 
-The GraphQL API should initially stay small.
+The HTTP API should initially stay small. Use JSON routes on the FastAPI app, alongside the existing auth routes.
 
-### Exercise queries
+### Exercise routes
 
 Potential operations:
 
 ```text
-sections          (each with its exercises: id + title)
-exercise(id)
+GET /lessons
+GET /lessons/{lessonId}/exercises/{exerciseId}
 ```
 
-The sections response should contain enough for browsing (section name, and each exercise's id and title) without sending full exercise content for every item.
+The lessons response should contain enough for browsing (lesson name, and each exercise's id and title) without sending full exercise content for every item.
 
-A single exercise query can return:
+A single exercise response can return:
 
 ```text
 title
-section
+lesson
 description
 starterCode
 ```
 
-The exercise `id` is the only identifier: it is the folder name (e.g. `001-sum`), it is used in URLs, and it is the `exerciseId` sent to `executeCode`. There is no separate slug.
+An exercise is identified by its lesson id plus its exercise id. Both are folder slugs (`basics` and `sum`), not numbers. The frontend may use a separate URL slug.
 
-### Execution mutation
+### Run route
 
 Potential operation:
 
 ```text
-executeCode(exerciseId, code)
+POST /lessons/{lessonId}/exercises/{exerciseId}/run
 ```
 
 The client sends:
-- exercise identifier;
-- student's current code.
+- lesson id and exercise id in the path;
+- student's current code in the body.
 
 The client should **not** send hidden tests.
 
-### Future GraphQL additions
+### Later routes
 
-Once authentication/database support is introduced, GraphQL could also expose:
+Once authentication and stored progress are in use, the API could also expose:
 
 ```text
 user
@@ -806,7 +774,7 @@ submissions
 favorites
 ```
 
-These should not be added simply because GraphQL makes them possible.
+Add a route when a feature needs it.
 
 ---
 
@@ -870,7 +838,7 @@ cpp-platform:preferences
 Example solved state:
 
 ```json
-["001-sum", "002-max", "003-count-vowels"]
+["sum", "max-of-three", "count-vowels"]
 ```
 
 The implementation should centralize localStorage access rather than calling `localStorage` throughout random components.
@@ -895,7 +863,7 @@ The application should distinguish different failure types rather than presentin
 
 Examples:
 - network unavailable;
-- GraphQL request failure;
+- API request failure;
 - sandbox unavailable (Docker not running, image build failed);
 - malformed response.
 
@@ -939,14 +907,14 @@ Test important behavior such as:
 - solved-state display;
 - loading/error states.
 
-### FastAPI/GraphQL tests
+### FastAPI tests
 
 Test:
-- exercise queries;
+- lesson and exercise routes;
 - exercise lookup;
 - input validation;
-- execution mutation behavior;
-- conversion of runner results into GraphQL responses;
+- run route behavior;
+- conversion of runner results into JSON responses;
 - handling of runner failures (Docker unavailable, image build failure).
 
 Mock `run_cpp` in these tests so they run without Docker.
@@ -973,13 +941,13 @@ Exit-code classification (`result_from_exit`) can be unit-tested without Docker.
 Eventually test the full path:
 
 ```text
-GraphQL request
+HTTP request
     -> FastAPI
     -> runner
     -> Docker
     -> C++ tests
     -> runner result
-    -> GraphQL response
+    -> JSON response
 ```
 
 This is especially important because individual services can work correctly while their interfaces disagree.
@@ -1131,7 +1099,7 @@ A repeatable command/script that safely compiles and runs a simple C++ program i
 Create the first real exercise:
 
 ```text
-001-sum/
+basics/sum/
 ```
 
 Implement:
@@ -1166,7 +1134,8 @@ Example input:
 
 ```json
 {
-  "exerciseId": "001-sum",
+  "lessonId": "basics",
+  "exerciseId": "sum",
   "code": "int sum(int a, int b) { return a + b; }"
 }
 ```
@@ -1174,27 +1143,27 @@ Example input:
 Deliverable:
 
 ```text
-run_exercise("001-sum", code) -> Docker -> structured result (status + tests)
+run_exercise("basics", "sum", code) -> Docker -> structured result (status + tests)
 ```
 
 ---
 
-### Phase 4 — Build FastAPI + GraphQL backend
+### Phase 4 — Build the FastAPI backend
 
 Create the application backend around the runner.
 
 Implement:
 - FastAPI application (served with an ASGI server such as uvicorn);
-- GraphQL schema and a GraphQL library mounted on the FastAPI app;
-- exercise queries;
+- JSON routes in `backend/routers/`;
+- lesson and exercise routes;
 - exercise lookup;
-- `executeCode` mutation, which calls the runner (off the event loop);
+- the run route, which calls the runner (off the event loop);
 - backend tests (with the runner mocked).
 
 Deliverable:
 
 ```text
-GraphQL request -> FastAPI -> runner -> Docker -> GraphQL response
+HTTP request -> FastAPI -> runner -> Docker -> JSON response
 ```
 
 At this point, the complete backend path should work even without a polished frontend.
@@ -1286,7 +1255,7 @@ A likely deployment architecture is:
                  ┌─────────────────────┐
                  │ Next.js / Vercel    │
                  └──────────┬──────────┘
-                            │ GraphQL
+                            │ HTTP JSON
                             v
                  ┌─────────────────────┐
                  │ FastAPI Backend     │
@@ -1336,9 +1305,9 @@ Own:
 
 Own:
 - FastAPI application;
-- GraphQL schema;
-- exercise queries;
-- execution mutation;
+- JSON routes;
+- lesson and exercise routes;
+- run route;
 - API validation;
 - backend tests.
 
@@ -1359,7 +1328,7 @@ Everyone should understand:
 - the overall architecture;
 - how requests flow through the system;
 - how to run the project locally;
-- the GraphQL schema;
+- the HTTP API;
 - the execution result format;
 - Git workflow and pull requests.
 
@@ -1377,7 +1346,7 @@ A typical workflow:
 main
   |
   +-- feature/frontend-exercise-page
-  +-- feature/graphql-exercises
+  +-- feature/exercise-api
   +-- feature/sandbox-runner
   +-- feature/test-harness
 ```
@@ -1413,7 +1382,6 @@ Include:
 Explain:
 - Next.js;
 - FastAPI;
-- GraphQL;
 - Python sandbox runner;
 - Docker;
 - C++ test harness;
@@ -1470,10 +1438,10 @@ A possible multi-week schedule:
 - JSONL
 - runner integration (`run_exercise`, result mapping)
 
-### Milestone 4 — FastAPI + GraphQL
+### Milestone 4 — FastAPI routes
 
-- exercise queries
-- execution mutation
+- lesson and exercise routes
+- run route
 - runner integration
 - backend tests
 
@@ -1542,7 +1510,7 @@ The team should also be able to:
 - follow the setup documentation;
 - run all services locally;
 - add a new exercise;
-- understand the GraphQL API;
+- understand the HTTP API;
 - understand the execution pipeline;
 - run the automated test suite;
 - deploy the application.
@@ -1577,23 +1545,11 @@ Learn:
 
 Learn:
 - FastAPI application structure (ASGI, uvicorn);
-- routing/resolvers;
+- routers and request models;
 - async vs. sync endpoints and the threadpool;
-- Pydantic-style validation;
-- GraphQL schemas;
-- validation;
+- Pydantic validation;
 - service-layer design;
 - backend testing.
-
-### GraphQL
-
-Learn:
-- queries;
-- mutations;
-- schemas;
-- resolvers;
-- typed API design;
-- frontend/backend contracts.
 
 ### Docker
 
@@ -1653,9 +1609,9 @@ A queue/worker architecture may eventually help with scale, but it adds signific
 
 Build the C++ execution pipeline well before generalizing it.
 
-### Do not over-engineer the GraphQL schema
+### Do not over-engineer the HTTP API
 
-Expose the concepts the current application needs. Add new types and mutations when a real feature requires them.
+Expose the routes the current application needs. Add a route when a real feature requires it.
 
 ### Do not treat Docker as the final security architecture
 
@@ -1673,7 +1629,7 @@ Once the first release works, the architecture can grow toward:
                      │   Frontend    │
                      └───────┬───────┘
                              │
-                          GraphQL
+                         HTTP JSON
                              │
                      ┌───────v───────┐
                      │FastAPI Backend │
@@ -1752,10 +1708,8 @@ C++ source
 
 ### Step 4 — Build the first exercise
 
-Create `001-sum` with:
+Create `basics/sum` with:
 
-- `exercise.md`;
-- `starter.cpp`;
 - `tester.cpp`;
 - `tests.txt`.
 
@@ -1773,13 +1727,13 @@ into:
 structured execution result
 ```
 
-### Step 6 — Add FastAPI + GraphQL
+### Step 6 — Add FastAPI routes
 
-Expose exercises and code execution through the GraphQL API.
+Expose exercises and code execution through JSON routes.
 
 ### Step 7 — Build the frontend
 
-Connect Next.js to the GraphQL API and build the complete exercise workflow.
+Connect Next.js to the FastAPI routes and build the complete exercise workflow.
 
 ### Step 8 — Expand and harden
 
@@ -1806,12 +1760,12 @@ The intended first-release architecture is:
                 │ localStorage        │
                 └──────────┬──────────┘
                            │
-                        GraphQL
+                        HTTP JSON
                            │
                            v
                 ┌─────────────────────┐
                 │ FastAPI / Python    │
-                │ GraphQL API         │
+                │ JSON routes         │
                 │ Application Logic   │
                 └──────────┬──────────┘
                            │

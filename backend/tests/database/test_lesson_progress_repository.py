@@ -30,20 +30,20 @@ async def lesson_progress(db_pool: asyncpg.Pool) -> AsyncIterator[LessonProgress
         DbConnection.pool = None
 
 
-async def test_get_code_is_scoped_to_user_chapter_and_lesson(
+async def test_get_code_is_scoped_to_user_lesson_and_exercise(
     lesson_progress: LessonProgressRepository,
     db_pool: asyncpg.Pool,
 ) -> None:
     ada = await _insert_user(db_pool, "ada")
     grace = await _insert_user(db_pool, "grace")
-    await lesson_progress.create_lesson_progress(ada, 1, 1, "ada-1-1")
-    await lesson_progress.create_lesson_progress(ada, 1, 2, "ada-1-2")
-    await lesson_progress.create_lesson_progress(grace, 1, 1, "grace-1-1")
+    await lesson_progress.create_lesson_progress(ada, "basics", "sum", "ada-sum")
+    await lesson_progress.create_lesson_progress(ada, "basics", "is-even", "ada-even")
+    await lesson_progress.create_lesson_progress(grace, "basics", "sum", "grace-sum")
 
-    assert await lesson_progress.get_code(ada, 1, 1) == "ada-1-1"
-    assert await lesson_progress.get_code(ada, 1, 2) == "ada-1-2"
-    assert await lesson_progress.get_code(grace, 1, 1) == "grace-1-1"
-    assert await lesson_progress.get_code(ada, 2, 1) is None
+    assert await lesson_progress.get_code(ada, "basics", "sum") == "ada-sum"
+    assert await lesson_progress.get_code(ada, "basics", "is-even") == "ada-even"
+    assert await lesson_progress.get_code(grace, "basics", "sum") == "grace-sum"
+    assert await lesson_progress.get_code(ada, "conditionals", "sum") is None
 
 
 async def test_update_code_replaces_only_the_matching_row(
@@ -51,13 +51,13 @@ async def test_update_code_replaces_only_the_matching_row(
     db_pool: asyncpg.Pool,
 ) -> None:
     user_id = await _insert_user(db_pool, "ada")
-    await lesson_progress.create_lesson_progress(user_id, 1, 1, "before")
-    await lesson_progress.create_lesson_progress(user_id, 1, 2, "other")
+    await lesson_progress.create_lesson_progress(user_id, "basics", "sum", "before")
+    await lesson_progress.create_lesson_progress(user_id, "basics", "is-even", "other")
 
-    await lesson_progress.update_code(user_id, 1, 1, "after")
+    await lesson_progress.update_code(user_id, "basics", "sum", "after")
 
-    assert await lesson_progress.get_code(user_id, 1, 1) == "after"
-    assert await lesson_progress.get_code(user_id, 1, 2) == "other"
+    assert await lesson_progress.get_code(user_id, "basics", "sum") == "after"
+    assert await lesson_progress.get_code(user_id, "basics", "is-even") == "other"
 
 
 async def test_clear_all_progress_deletes_only_that_user(
@@ -66,12 +66,12 @@ async def test_clear_all_progress_deletes_only_that_user(
 ) -> None:
     ada = await _insert_user(db_pool, "ada")
     grace = await _insert_user(db_pool, "grace")
-    await lesson_progress.create_lesson_progress(ada, 1, 1, "ada")
-    await lesson_progress.create_lesson_progress(ada, 2, 1, "ada-again")
-    await lesson_progress.create_lesson_progress(grace, 1, 1, "grace")
+    await lesson_progress.create_lesson_progress(ada, "basics", "sum", "ada")
+    await lesson_progress.create_lesson_progress(ada, "loops", "power", "ada-again")
+    await lesson_progress.create_lesson_progress(grace, "basics", "sum", "grace")
 
     await lesson_progress.clear_all_progress(ada)
 
-    assert await lesson_progress.get_code(ada, 1, 1) is None
-    assert await lesson_progress.get_code(ada, 2, 1) is None
-    assert await lesson_progress.get_code(grace, 1, 1) == "grace"
+    assert await lesson_progress.get_code(ada, "basics", "sum") is None
+    assert await lesson_progress.get_code(ada, "loops", "power") is None
+    assert await lesson_progress.get_code(grace, "basics", "sum") == "grace"

@@ -1,0 +1,11 @@
+input: increment,increment,get
+expected: 2
+
+input: increment,reset,get
+expected: 0
+
+input: get
+expected: 0
+
+input: increment,increment,increment,reset,increment,get
+expected: 1

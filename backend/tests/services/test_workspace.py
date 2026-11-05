@@ -2,7 +2,7 @@ from pathlib import Path
 import pytest
 
 from services.workspace import (
-    STUDENT_FILENAME,
+    SOLUTION_FILENAME,
     TESTER_FILENAME,
     TESTS_FILENAME,
     WorkspaceService,
@@ -13,7 +13,7 @@ def test_write_files_normalizes_newlines(tmp_path: Path) -> None:
     workspace = WorkspaceService()
     workspace.write_files(tmp_path, "int main() {\r\n}\r", "int main() {\r\n}\r", "name: a\r\n")
 
-    source = (tmp_path / STUDENT_FILENAME).read_text(encoding="utf-8")
+    source = (tmp_path / SOLUTION_FILENAME).read_text(encoding="utf-8")
     tester = (tmp_path / TESTER_FILENAME).read_text(encoding="utf-8")
     tests = (tmp_path / TESTS_FILENAME).read_text(encoding="utf-8")
     assert source == "int main() {\n}\n"
@@ -60,7 +60,7 @@ def test_open_gives_each_call_its_own_directory() -> None:
 def test_write_files_creates_the_sandbox_files(tmp_path: Path) -> None:
     WorkspaceService().write_files(tmp_path, "int main() { return 0; }\n", "int main() { return 0; }\n", "")
 
-    assert (tmp_path / STUDENT_FILENAME).is_file()
+    assert (tmp_path / SOLUTION_FILENAME).is_file()
     assert (tmp_path / TESTER_FILENAME).is_file()
     assert (tmp_path / TESTS_FILENAME).read_text(encoding="utf-8") == ""
     assert (tmp_path / "harness.h").is_file()

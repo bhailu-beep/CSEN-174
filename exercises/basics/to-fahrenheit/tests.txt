@@ -1,0 +1,11 @@
+input: 0
+expected: 32
+
+input: 100
+expected: 212
+
+input: -40
+expected: -40
+
+input: 10
+expected: 50

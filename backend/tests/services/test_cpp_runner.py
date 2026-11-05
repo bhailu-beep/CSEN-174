@@ -7,7 +7,7 @@ from models.result import RunResult, Stage
 from models.tests import TestCase, TestResult, parse_tests
 from services.cpp_runner import CppRunnerService
 from services.docker import DockerService
-from services.workspace import STUDENT_FILENAME, TESTS_FILENAME, WorkspaceService
+from services.workspace import SOLUTION_FILENAME, TESTS_FILENAME, WorkspaceService
 
 
 def _success() -> RunResult:
@@ -102,7 +102,7 @@ def test_workspace_receives_source(tmp_path: Path) -> None:
             tests=[],
         )
 
-    assert (tmp_path / STUDENT_FILENAME).read_text(encoding="utf-8") == "int main() { return 0; }\n"
+    assert (tmp_path / SOLUTION_FILENAME).read_text(encoding="utf-8") == "int main() { return 0; }\n"
     docker.run_container.assert_called_once_with(tmp_path, DEFAULT_RUN_TIMEOUT_SECONDS)
 
 

@@ -4,11 +4,11 @@ import pytest
 
 from models.tests import TestResult, parse_tests, sandbox_tests, score
 
-UMBRELLA_TESTS = (
+SUM_TESTS = (
     Path(__file__).resolve().parents[3]
     / "exercises"
-    / "02-conditionals"
-    / "004-umbrella-weather"
+    / "basics"
+    / "sum"
     / "tests.txt"
 )
 
@@ -39,15 +39,15 @@ def test_score_keeps_each_case_independent() -> None:
     assert "name" not in sandbox
 
 
-def test_umbrella_tests_file_lists_inputs_and_expected_answers() -> None:
-    cases = parse_tests(UMBRELLA_TESTS.read_text(encoding="utf-8"))
+def test_sum_tests_file_lists_inputs_and_expected_answers() -> None:
+    cases = parse_tests(SUM_TESTS.read_text(encoding="utf-8"))
 
     assert [(case.inputs, case.expected) for case in cases[:2]] == [
-        (("sunny", "80"), "false"),
-        (("sunny", "25"), "false"),
+        (("2", "3"), "5"),
+        (("-4", "4"), "0"),
     ]
-    assert cases[-1].inputs == ("hail", "0")
-    assert cases[-1].expected == "true"
+    assert cases[-1].inputs == ("0", "0")
+    assert cases[-1].expected == "0"
     assert "expected" not in sandbox_tests(cases)
 
 

@@ -1,0 +1,15 @@
+input: 1,2,3
+input: 3
+expected: 6
+
+input: 
+input: 0
+expected: 0
+
+input: 4,5
+input: 1
+expected: 4
+
+input: 10,-2,3
+input: 3
+expected: 11

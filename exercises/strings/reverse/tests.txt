@@ -1,0 +1,11 @@
+input: cat
+expected: tac
+
+input: 
+expected: 
+
+input: a
+expected: a
+
+input: abba
+expected: abba

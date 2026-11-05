@@ -1,0 +1,8 @@
+input: 5
+expected: 10
+
+input: 0
+expected: 0
+
+input: -3
+expected: -6

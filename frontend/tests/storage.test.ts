@@ -12,7 +12,7 @@ describe("codeStorage", () => {
   it("saves, loads, and clears code with the cpp-platform: prefix", () => {
     saveCode(sum.id, "int sum(int a, int b) { return a + b; }");
     expect(loadCode(sum.id)).toContain("return a + b");
-    expect(localStorage.getItem("cpp-platform:code:001-sum")).not.toBeNull();
+    expect(localStorage.getItem("cpp-platform:code:sum")).not.toBeNull();
     clearCode(sum.id);
     expect(loadCode(sum.id)).toBeNull();
   });
@@ -36,7 +36,7 @@ describe("progressStorage", () => {
   it("marks solved once, without duplicates", () => {
     markSolved(sum.id);
     markSolved(sum.id);
-    expect(getSolved()).toEqual(["001-sum"]);
+    expect(getSolved()).toEqual(["sum"]);
     expect(getStatus(sum)).toBe("solved");
   });
 

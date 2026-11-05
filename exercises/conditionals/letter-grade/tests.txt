@@ -1,0 +1,26 @@
+input: 95
+expected: A
+
+input: 90
+expected: A
+
+input: 89
+expected: B
+
+input: 80
+expected: B
+
+input: 72
+expected: C
+
+input: 70
+expected: C
+
+input: 60
+expected: D
+
+input: 59
+expected: F
+
+input: 0
+expected: F
