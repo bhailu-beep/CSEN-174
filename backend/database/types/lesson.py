@@ -18,6 +18,15 @@ class Lesson(BaseModel):
     name: str
 
 
+class LessonOverview(BaseModel):
+    """One lesson on the dashboard: how many exercises it has, and how many this user has completed."""
+
+    id: str
+    name: str
+    exercise_count: int
+    completed_count: int
+
+
 class Exercise(BaseModel):
     """One function problem. Identified with its lesson, not by a global number."""
 

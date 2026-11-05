@@ -1,9 +1,28 @@
-from database.types.lesson import Exercise, LessonRepository
+from database.types.lesson import Exercise, LessonOverview, LessonRepository
+from database.types.lesson_progress import LessonProgressRepository
 
 
 class LessonService:
-    def __init__(self, lesson_repository: LessonRepository):
+    def __init__(
+        self,
+        lesson_repository: LessonRepository,
+        lesson_progress_repository: LessonProgressRepository,
+    ):
         self.lesson_repository = lesson_repository
+        self.lesson_progress_repository = lesson_progress_repository
+
+    async def get_lessons(self, user_id: int) -> list[LessonOverview]:
+        catalog = await self.lesson_repository.get_lessons()
+        completed = await self.lesson_progress_repository.count_completed_by_lesson(user_id)
+        return [
+            LessonOverview(
+                id=lesson.id,
+                name=lesson.name,
+                exercise_count=len(exercises),
+                completed_count=completed.get(lesson.id, 0),
+            )
+            for lesson, exercises in catalog.items()
+        ]
 
     async def get_exercise(self, lesson_id: str, exercise_id: str) -> Exercise:
         return await self.lesson_repository.get_exercise(lesson_id, exercise_id)

@@ -39,9 +39,10 @@ def get_lesson_repository() -> LessonRepository:
 
 
 def get_lesson_service(
-    repository: Annotated[LessonRepository, Depends(get_lesson_repository)],
+    lessons: Annotated[LessonRepository, Depends(get_lesson_repository)],
+    progress: Annotated[LessonProgressRepository, Depends(get_lesson_progress_repository)],
 ) -> LessonService:
-    return LessonService(repository)
+    return LessonService(lessons, progress)
 
 
 def get_user_service(repository: Annotated[UserRepository, Depends(get_user_repository)]) -> UserService:

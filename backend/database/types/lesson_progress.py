@@ -40,6 +40,18 @@ class LessonProgressRepository:
             exercise_id,
         )
 
+    async def count_completed_by_lesson(self, user_id: int) -> dict[str, int]:
+        rows = await self.connection.fetch(
+            """
+            SELECT lesson_id, COUNT(*) AS completed
+            FROM lesson_progress
+            WHERE user_id = $1 AND completed
+            GROUP BY lesson_id
+            """,
+            user_id,
+        )
+        return {row["lesson_id"]: row["completed"] for row in rows}
+
     async def clear_all_progress(self, user_id: int) -> None:
         await self.connection.execute(
             "DELETE FROM lesson_progress WHERE user_id = $1",
