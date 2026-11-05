@@ -5,6 +5,8 @@ from database.types.user import User
 from dependencies import (get_current_user, get_lesson_progress_service,
                           get_lesson_service)
 from fastapi import APIRouter, Depends, HTTPException
+from models.result import SubmissionResult
+from pydantic import BaseModel
 from services.lesson import LessonService
 from services.lesson_progress import LessonProgressService
 
@@ -56,3 +58,22 @@ async def update_code(
         await lesson_progress_service.update_code(user.id, lesson_id, exercise_id, code)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class RunCodeRequest(BaseModel):
+    code: str
+
+
+@router.post("/{lesson_id}/exercises/{exercise_id}/run")
+async def run_code(
+    lesson_id: str,
+    exercise_id: str,
+    body: RunCodeRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    lessons: Annotated[LessonService, Depends(get_lesson_service)],
+) -> SubmissionResult:
+    try:
+        return await lessons.run_code(user.id, lesson_id, exercise_id, body.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+

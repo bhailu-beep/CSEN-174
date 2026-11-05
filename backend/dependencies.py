@@ -8,6 +8,7 @@ from database.connection import DbConnection
 from database.types.lesson import LessonRepository
 from database.types.lesson_progress import LessonProgressRepository
 from database.types.user import User, UserRepository
+from services.cpp_runner import CppRunnerService
 from services.lesson import LessonService
 from services.lesson_progress import LessonProgressService
 from services.user import UserService
@@ -38,11 +39,19 @@ def get_lesson_repository() -> LessonRepository:
     return _lesson_repository
 
 
+_runner = CppRunnerService()
+
+
+def get_cpp_runner() -> CppRunnerService:
+    return _runner
+
+
 def get_lesson_service(
     lessons: Annotated[LessonRepository, Depends(get_lesson_repository)],
     progress: Annotated[LessonProgressRepository, Depends(get_lesson_progress_repository)],
+    runner: Annotated[CppRunnerService, Depends(get_cpp_runner)],
 ) -> LessonService:
-    return LessonService(lessons, progress)
+    return LessonService(lessons, progress, runner)
 
 
 def get_user_service(repository: Annotated[UserRepository, Depends(get_user_repository)]) -> UserService:

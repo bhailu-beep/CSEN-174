@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel
 
 from config import COMPILE_EXIT, COMPILE_TIMEOUT_EXIT, GNU_TIMEOUT_EXIT
 from models.tests import TestResult
+
+RunStatus = Literal["passed", "failed", "compilation_error", "timeout", "execution_error"]
 
 
 class Stage(StrEnum):
@@ -102,3 +107,38 @@ class RunResult:
             timed_out=False,
             message="",
         )
+
+
+class ScoredTest(BaseModel):
+    passed: bool
+    expected: str
+    actual: str
+
+
+class SubmissionResult(BaseModel):
+    """The run response. Internal exit codes and stages stay off this object."""
+
+    status: RunStatus
+    tests: list[ScoredTest]
+    message: str
+    compiler_output: str | None = None
+
+
+def submission_result(result: RunResult) -> SubmissionResult:
+    tests = [ScoredTest(passed=test.passed, expected=test.expected, actual=test.actual) for test in result.tests]
+    if result.timed_out:
+        status: RunStatus = "timeout"
+    elif result.stage == Stage.COMPILE:
+        status = "compilation_error"
+    elif tests and all(test.passed for test in tests):
+        status = "passed"
+    elif tests:
+        status = "failed"
+    else:
+        status = "execution_error"
+    return SubmissionResult(
+        status=status,
+        tests=tests,
+        message=result.message,
+        compiler_output=result.stderr if status == "compilation_error" else None,
+    )

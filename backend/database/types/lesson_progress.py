@@ -45,7 +45,12 @@ class LessonProgressRepository:
 
     async def mark_completed(self, user_id: int, lesson_id: str, exercise_id: str) -> None:
         await self.connection.execute(
-            "UPDATE lesson_progress SET completed = TRUE WHERE user_id = $1 AND lesson_id = $2 AND exercise_id = $3",
+            """
+            INSERT INTO lesson_progress (user_id, lesson_id, exercise_id, completed)
+            VALUES ($1, $2, $3, TRUE)
+            ON CONFLICT (user_id, lesson_id, exercise_id)
+            DO UPDATE SET completed = TRUE
+            """,
             user_id,
             lesson_id,
             exercise_id,
