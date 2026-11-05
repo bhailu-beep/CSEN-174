@@ -1,4 +1,4 @@
-from database.types.lesson import Exercise, LessonOverview, LessonRepository
+from database.types.lesson import Exercise, LessonOverview, LessonRepository, TestCase
 from database.types.lesson_progress import LessonProgressRepository
 
 
@@ -26,3 +26,10 @@ class LessonService:
 
     async def get_exercise(self, lesson_id: str, exercise_id: str) -> Exercise:
         return await self.lesson_repository.get_exercise(lesson_id, exercise_id)
+
+    async def get_tests(self, lesson_id: str, exercise_id: str) -> list[TestCase] | None:
+        try:
+            exercise = await self.lesson_repository.get_exercise(lesson_id, exercise_id)
+        except ValueError:
+            return None
+        return exercise.tests

@@ -60,6 +60,26 @@ async def test_update_code_replaces_only_the_matching_row(
     assert await lesson_progress.get_code(user_id, "basics", "is-even") == "other"
 
 
+async def test_update_code_creates_one_row_when_the_exercise_has_no_progress(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+
+    await lesson_progress.update_code(user_id, "basics", "sum", "first")
+    await lesson_progress.update_code(user_id, "basics", "sum", "second")
+
+    assert await lesson_progress.get_code(user_id, "basics", "sum") == "second"
+    async with db_pool.acquire() as connection:
+        count = await connection.fetchval(
+            "SELECT COUNT(*) FROM lesson_progress WHERE user_id = $1 AND lesson_id = $2 AND exercise_id = $3",
+            user_id,
+            "basics",
+            "sum",
+        )
+    assert count == 1
+
+
 async def test_clear_all_progress_deletes_only_that_user(
     lesson_progress: LessonProgressRepository,
     db_pool: asyncpg.Pool,

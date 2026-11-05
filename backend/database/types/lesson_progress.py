@@ -16,20 +16,31 @@ class LessonProgressRepository:
 
     async def get_code(self, user_id: int, lesson_id: str, exercise_id: str) -> str | None:
         result = await self.connection.fetchrow(
-            "SELECT code FROM lesson_progress WHERE user_id = $1 AND lesson_id = $2 AND exercise_id = $3",
+            """
+            INSERT INTO lesson_progress (user_id, lesson_id, exercise_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, lesson_id, exercise_id)
+            DO UPDATE SET code = lesson_progress.code
+            RETURNING code
+            """,
             user_id,
             lesson_id,
             exercise_id,
         )
-        return result["code"] if result else None
+        return result["code"]
 
     async def update_code(self, user_id: int, lesson_id: str, exercise_id: str, code: str) -> None:
         await self.connection.execute(
-            "UPDATE lesson_progress SET code = $1 WHERE user_id = $2 AND lesson_id = $3 AND exercise_id = $4",
-            code,
+            """
+            INSERT INTO lesson_progress (user_id, lesson_id, exercise_id, code)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (user_id, lesson_id, exercise_id)
+            DO UPDATE SET code = EXCLUDED.code
+            """,
             user_id,
             lesson_id,
             exercise_id,
+            code,
         )
 
     async def mark_completed(self, user_id: int, lesson_id: str, exercise_id: str) -> None:

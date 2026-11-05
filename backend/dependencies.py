@@ -50,9 +50,10 @@ def get_user_service(repository: Annotated[UserRepository, Depends(get_user_repo
 
 
 def get_lesson_progress_service(
-    repository: Annotated[LessonProgressRepository, Depends(get_lesson_progress_repository)],
+    progress: Annotated[LessonProgressRepository, Depends(get_lesson_progress_repository)],
+    lessons: Annotated[LessonRepository, Depends(get_lesson_repository)],
 ) -> LessonProgressService:
-    return LessonProgressService(repository)
+    return LessonProgressService(progress, lessons)
 
 
 async def get_current_user(

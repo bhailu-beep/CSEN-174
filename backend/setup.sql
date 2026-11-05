@@ -10,6 +10,7 @@ CREATE TABLE lesson_progress (
     lesson_id TEXT NOT NULL,
     exercise_id TEXT NOT NULL,
     completed BOOLEAN NOT NULL DEFAULT FALSE,
-    code TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    code TEXT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE (user_id, lesson_id, exercise_id)
 );
