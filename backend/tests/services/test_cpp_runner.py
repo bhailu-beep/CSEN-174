@@ -158,3 +158,78 @@ def test_compile_failure_does_not_score_stdout(tmp_path: Path) -> None:
 
     assert result.stage is Stage.COMPILE
     assert result.tests == ()
+
+
+def _run_with_exit(
+    tmp_path: Path, result: RunResult, tests: list[TestCase]
+) -> RunResult:
+    """Run the service with the docker mock returning `result`."""
+    docker = _docker_mock()
+    docker.run_container.return_value = result
+    workspace = WorkspaceService()
+
+    with patch.object(workspace, "open", return_value=nullcontext(tmp_path)):
+        return CppRunnerService(docker=docker, workspace=workspace).run(
+            "int sum(int a, int b) { return a + b; }\n",
+            tester="int main() { return 0; }\n",
+            tests=tests,
+        )
+
+
+def test_runtime_crash_does_not_score_stdout(tmp_path: Path) -> None:
+    # Exit code 139 (segfault) is ok=True but non-zero, so N13 is false.
+    crashed = RunResult.from_exit(139, '{"actual":"3"}\n', "Segmentation fault")
+    result = _run_with_exit(tmp_path, crashed, [TestCase(inputs=("1", "2"), expected="3")])
+
+    assert result.ok is True
+    assert result.exit_code == 139
+    assert result.tests == ()
+
+
+def test_program_timeout_does_not_score_stdout(tmp_path: Path) -> None:
+    timed_out = RunResult.from_exit(124, '{"actual":"3"}\n', "")
+    result = _run_with_exit(tmp_path, timed_out, [TestCase(inputs=("1", "2"), expected="3")])
+
+    assert result.timed_out is True
+    assert result.tests == ()
+
+
+def test_missing_actuals_are_marked_failed(tmp_path: Path) -> None:
+    # Student output only has one {"actual"} line for two tests.
+    finished = RunResult.from_exit(0, '{"actual":"3"}\n', "")
+    tests = [
+        TestCase(inputs=("1", "2"), expected="3"),
+        TestCase(inputs=("-1", "5"), expected="4"),
+    ]
+    result = _run_with_exit(tmp_path, finished, tests)
+
+    assert result.tests == (
+        TestResult(passed=True, expected="3", actual="3"),
+        TestResult(passed=False, expected="4", actual=""),
+    )
+
+
+def test_malformed_output_lines_are_ignored(tmp_path: Path) -> None:
+    stdout = (
+        "{not json\n"
+        '["actual", "9"]\n'
+        '{"actual": 3}\n'
+        '{"actual":"3"}\n'
+    )
+    finished = RunResult.from_exit(0, stdout, "")
+    result = _run_with_exit(tmp_path, finished, [TestCase(inputs=("1", "2"), expected="3")])
+
+    assert result.tests == (TestResult(passed=True, expected="3", actual="3"),)
+
+
+def test_sandbox_file_has_inputs_only_and_handles_no_argument_cases(tmp_path: Path) -> None:
+    tests = [
+        TestCase(inputs=("sunny", "80"), expected="false"),
+        TestCase(inputs=(), expected="42"),
+    ]
+    _run_with_exit(tmp_path, _success(), tests)
+
+    written = (tmp_path / TESTS_FILENAME).read_text(encoding="utf-8")
+    assert written == "input: sunny\ninput: 80\n\ncase\n"
+    assert "false" not in written
+    assert "42" not in written
