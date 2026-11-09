@@ -1,0 +1,14 @@
+input: hello
+expected: 2
+
+input: sky
+expected: 0
+
+input: aeiou
+expected: 5
+
+input: AEIOU
+expected: 0
+
+input: 
+expected: 0

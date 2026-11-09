@@ -1,0 +1,11 @@
+input: 1234
+expected: 10
+
+input: 7
+expected: 7
+
+input: 0
+expected: 0
+
+input: 909
+expected: 18

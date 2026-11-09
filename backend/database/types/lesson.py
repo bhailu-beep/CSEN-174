@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -5,101 +6,94 @@ from pydantic import BaseModel, ConfigDict
 from models.tests import TestCase, parse_tests
 
 EXERCISES_DIR = Path(__file__).resolve().parents[3] / "exercises"
-
-
-class Chapter(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    name: str
+_SLUG = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 
 class Lesson(BaseModel):
-    id: int
+    """A group of exercises, one folder under exercises/ (for example basics)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
     name: str
-    title: str
-    chapter_id: int
-    content: str
-    starter_code: str
+
+
+class LessonOverview(BaseModel):
+    """One lesson on the dashboard: how many exercises it has, and how many this user has completed."""
+
+    id: str
+    name: str
+    exercise_count: int
+    completed_count: int
+
+
+class Exercise(BaseModel):
+    """One function problem. Identified with its lesson, not by a global number."""
+
+    id: str
+    lesson_id: str
     tester_code: str
     tests: list[TestCase]
-    solution_code: str
 
 
 class LessonRepository:
     def __init__(self, exercises_dir: Path = EXERCISES_DIR):
         self.exercises_dir = exercises_dir
-        # Filled on first use and reused. A lesson is (chapter id, lesson id).
-        self._by_chapter: dict[Chapter, list[Lesson]] | None = None
+        # Filled on first use and reused. An exercise is (lesson id, exercise id).
+        self._by_lesson: dict[Lesson, list[Exercise]] | None = None
 
-    async def get_lessons(self) -> dict[Chapter, list[Lesson]]:
+    async def get_lessons(self) -> dict[Lesson, list[Exercise]]:
         return self._ensure_loaded()
 
-    async def get_lesson(self, chapter_id: int, lesson_id: int) -> Lesson:
-        for chapter, lessons in self._ensure_loaded().items():
-            if chapter.id != chapter_id:
+    async def get_exercise(self, lesson_id: str, exercise_id: str) -> Exercise:
+        for lesson, exercises in self._ensure_loaded().items():
+            if lesson.id != lesson_id:
                 continue
-            for lesson in lessons:
-                if lesson.id == lesson_id:
-                    return lesson
+            for exercise in exercises:
+                if exercise.id == exercise_id:
+                    return exercise
             break
-        raise ValueError(f"Lesson {lesson_id} not found in chapter {chapter_id}")
+        raise ValueError(f"Exercise {exercise_id} not found in lesson {lesson_id}")
 
-    def _ensure_loaded(self) -> dict[Chapter, list[Lesson]]:
-        if self._by_chapter is not None:
-            return self._by_chapter
+    def _ensure_loaded(self) -> dict[Lesson, list[Exercise]]:
+        if self._by_lesson is not None:
+            return self._by_lesson
         if not self.exercises_dir.is_dir():
             raise ValueError(f"Exercises directory {self.exercises_dir} not found")
 
-        grouped: dict[Chapter, list[Lesson]] = {}
+        grouped: dict[Lesson, list[Exercise]] = {}
 
-        for section in sorted(path for path in self.exercises_dir.iterdir() if path.is_dir()):
-            chapter_id, name = _split_name(section.name)
-            chapter = Chapter(id=chapter_id, name=name)
-            lessons: list[Lesson] = []
+        for lesson_dir in sorted(path for path in self.exercises_dir.iterdir() if path.is_dir()):
+            lesson_id = _slug(lesson_dir.name)
+            lesson = Lesson(id=lesson_id, name=_display_name(lesson_id))
+            exercises: list[Exercise] = []
 
-            for exercise in sorted(path for path in section.iterdir() if path.is_dir()):
-                lesson_id, name = _split_name(exercise.name)
-
-                title, content = _read_exercise(exercise / "exercise.md")
-
-                lesson = Lesson(
-                    id=lesson_id,
-                    name=name,
-                    title=title,
-                    chapter_id=chapter.id,
-                    content=content,
-                    starter_code=_read_text(exercise / "starter.cpp"),
-                    tester_code=_read_text(exercise / "tester.cpp"),
-                    tests=parse_tests(_read_text(exercise / "tests.txt")),
-                    solution_code=_read_text(exercise / "solution.cpp"),
+            for exercise_dir in sorted(path for path in lesson_dir.iterdir() if path.is_dir()):
+                exercise_id = _slug(exercise_dir.name)
+                exercises.append(
+                    Exercise(
+                        id=exercise_id,
+                        lesson_id=lesson.id,
+                        tester_code=_read_text(exercise_dir / "tester.cpp"),
+                        tests=parse_tests(_read_text(exercise_dir / "tests.txt")),
+                    )
                 )
-                lessons.append(lesson)
-            lessons.sort(key=lambda lesson: lesson.id)
-            grouped[chapter] = lessons
-        self._by_chapter = dict(sorted(grouped.items(), key=lambda item: item[0].id))
-        return self._by_chapter
+            grouped[lesson] = exercises
+        self._by_lesson = grouped
+        return self._by_lesson
 
 
-def _split_name(folder_name: str) -> tuple[int, str]:
-    # "02-conditionals" -> id 2, name "Conditionals".
-    prefix, separator, rest = folder_name.partition("-")
-    if separator == "" or not prefix.isdigit() or rest == "":
-        raise ValueError(f"Folder {folder_name} must look like 01-basics")
-    return int(prefix), rest.replace("-", " ").title()
+def _slug(folder_name: str) -> str:
+    if _SLUG.fullmatch(folder_name) is None:
+        raise ValueError(f"Folder {folder_name} must be a lowercase slug like basics or sum")
+    return folder_name
+
+
+def _display_name(slug: str) -> str:
+    return slug.replace("-", " ").title()
 
 
 def _read_text(path: Path) -> str:
     if not path.is_file():
         raise ValueError(f"{path} is missing")
     return path.read_text(encoding="utf-8")
-
-
-def _read_exercise(path: Path) -> tuple[str, str]:
-    lines = _read_text(path).splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith("# "):
-            title = line[2:].strip()
-            content = "\n".join(lines[index + 1 :]).strip()
-            return title, content
-    raise ValueError(f"{path} is missing a title heading")

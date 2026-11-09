@@ -1,0 +1,8 @@
+input: 2,4,9
+expected: 5
+
+input: 1,2
+expected: 1.5
+
+input: 7
+expected: 7

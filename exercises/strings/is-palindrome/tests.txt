@@ -1,0 +1,14 @@
+input: level
+expected: true
+
+input: hello
+expected: false
+
+input: 
+expected: true
+
+input: a
+expected: true
+
+input: ab
+expected: false
