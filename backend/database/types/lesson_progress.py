@@ -1,4 +1,13 @@
 from asyncpg import Connection
+from pydantic import BaseModel
+
+
+class ExerciseProgress(BaseModel):
+    """One user's state on one exercise: finished, or at least has saved code."""
+
+    exercise_id: str
+    completed: bool
+    started: bool
 
 
 class LessonProgressRepository:
@@ -67,6 +76,21 @@ class LessonProgressRepository:
             user_id,
         )
         return {row["lesson_id"]: row["completed"] for row in rows}
+
+    async def get_lesson_progress(self, user_id: int, lesson_id: str) -> list[ExerciseProgress]:
+        rows = await self.connection.fetch(
+            """
+            SELECT exercise_id, completed, code IS NOT NULL AS started
+            FROM lesson_progress
+            WHERE user_id = $1 AND lesson_id = $2
+            """,
+            user_id,
+            lesson_id,
+        )
+        return [
+            ExerciseProgress(exercise_id=row["exercise_id"], completed=row["completed"], started=row["started"])
+            for row in rows
+        ]
 
     async def clear_all_progress(self, user_id: int) -> None:
         await self.connection.execute(

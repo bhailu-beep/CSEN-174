@@ -159,3 +159,43 @@ async def test_count_completed_by_lesson_is_empty_without_progress(
     user_id = await _insert_user(db_pool, "ada")
 
     assert await lesson_progress.count_completed_by_lesson(user_id) == {}
+
+
+async def test_get_lesson_progress_reports_completed_and_started_per_exercise(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+    await lesson_progress.update_code(user_id, "basics", "is-even", "typed something")
+    await lesson_progress.mark_completed(user_id, "basics", "sum")
+
+    progress = await lesson_progress.get_lesson_progress(user_id, "basics")
+
+    assert {row.exercise_id: (row.completed, row.started) for row in progress} == {
+        "is-even": (False, True),
+        "sum": (True, False),
+    }
+
+
+async def test_get_lesson_progress_is_scoped_to_the_user_and_lesson(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    ada = await _insert_user(db_pool, "ada")
+    grace = await _insert_user(db_pool, "grace")
+    await lesson_progress.mark_completed(ada, "basics", "sum")
+    await lesson_progress.mark_completed(ada, "loops", "power")
+    await lesson_progress.mark_completed(grace, "basics", "is-even")
+
+    progress = await lesson_progress.get_lesson_progress(ada, "basics")
+
+    assert [row.exercise_id for row in progress] == ["sum"]
+
+
+async def test_get_lesson_progress_is_empty_without_progress(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+
+    assert await lesson_progress.get_lesson_progress(user_id, "basics") == []

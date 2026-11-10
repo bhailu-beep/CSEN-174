@@ -5,9 +5,11 @@ from fastapi import HTTPException
 
 from database.types.user import User
 from database.types.lesson import LessonOverview
+from database.types.lesson_progress import ExerciseProgress
 from models.result import SubmissionResult
 from models.tests import TestCase
-from routers.lesson import RunCodeRequest, get_code, get_lessons, get_tests, run_code, update_code
+from routers.lesson import (RunCodeRequest, get_code, get_lesson_progress, get_lessons, get_tests, run_code,
+                            update_code)
 
 USER = User(id=4, username="ada", hashed_password="irrelevant")
 
@@ -92,5 +94,24 @@ async def test_get_tests_returns_404_when_the_exercise_is_missing() -> None:
 
     with pytest.raises(HTTPException) as exc:
         await get_tests("basics", "missing", lessons)
+
+    assert exc.value.status_code == 404
+
+
+async def test_get_lesson_progress_returns_the_users_progress() -> None:
+    rows = [ExerciseProgress(exercise_id="sum", completed=True, started=True)]
+    progress = AsyncMock()
+    progress.get_lesson_progress.return_value = rows
+
+    assert await get_lesson_progress(USER, "basics", progress) == rows
+    progress.get_lesson_progress.assert_awaited_once_with(USER.id, "basics")
+
+
+async def test_get_lesson_progress_returns_404_for_an_unknown_lesson() -> None:
+    progress = AsyncMock()
+    progress.get_lesson_progress.side_effect = ValueError("Lesson missing not found")
+
+    with pytest.raises(HTTPException) as exc:
+        await get_lesson_progress(USER, "missing", progress)
 
     assert exc.value.status_code == 404

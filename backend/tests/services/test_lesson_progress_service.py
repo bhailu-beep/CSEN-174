@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from database.types.lesson import Exercise, Lesson
+from database.types.lesson_progress import ExerciseProgress
 from services.lesson_progress import LessonProgressService
 
 USER_ID, LESSON_ID, EXERCISE_ID = 4, "conditionals", "leap-year"
@@ -89,3 +91,58 @@ async def test_unknown_exercise_is_rejected_before_progress_is_touched(
     repository.get_code.assert_not_awaited()
     repository.update_code.assert_not_awaited()
     repository.mark_completed.assert_not_awaited()
+
+
+def _catalog() -> dict[Lesson, list[Exercise]]:
+    return {
+        Lesson(id="basics", name="Basics"): [
+            Exercise(id="sum", lesson_id="basics", tester_code="", tests=[]),
+            Exercise(id="is-even", lesson_id="basics", tester_code="", tests=[]),
+            Exercise(id="to-fahrenheit", lesson_id="basics", tester_code="", tests=[]),
+        ],
+        Lesson(id="loops", name="Loops"): [
+            Exercise(id="power", lesson_id="loops", tester_code="", tests=[]),
+        ],
+    }
+
+
+async def test_get_lesson_progress_lists_every_exercise_in_catalog_order(
+    service: LessonProgressService, repository: AsyncMock, lessons: AsyncMock
+) -> None:
+    lessons.get_lessons.return_value = _catalog()
+    repository.get_lesson_progress.return_value = [
+        ExerciseProgress(exercise_id="is-even", completed=True, started=True),
+    ]
+
+    progress = await service.get_lesson_progress(USER_ID, "basics")
+
+    assert progress == [
+        ExerciseProgress(exercise_id="sum", completed=False, started=False),
+        ExerciseProgress(exercise_id="is-even", completed=True, started=True),
+        ExerciseProgress(exercise_id="to-fahrenheit", completed=False, started=False),
+    ]
+    repository.get_lesson_progress.assert_awaited_once_with(USER_ID, "basics")
+
+
+async def test_get_lesson_progress_ignores_saved_rows_for_exercises_no_longer_in_the_catalog(
+    service: LessonProgressService, repository: AsyncMock, lessons: AsyncMock
+) -> None:
+    lessons.get_lessons.return_value = _catalog()
+    repository.get_lesson_progress.return_value = [
+        ExerciseProgress(exercise_id="deleted-exercise", completed=True, started=True),
+    ]
+
+    progress = await service.get_lesson_progress(USER_ID, "loops")
+
+    assert progress == [ExerciseProgress(exercise_id="power", completed=False, started=False)]
+
+
+async def test_get_lesson_progress_rejects_an_unknown_lesson(
+    service: LessonProgressService, repository: AsyncMock, lessons: AsyncMock
+) -> None:
+    lessons.get_lessons.return_value = _catalog()
+
+    with pytest.raises(ValueError, match="Lesson missing not found"):
+        await service.get_lesson_progress(USER_ID, "missing")
+
+    repository.get_lesson_progress.assert_not_awaited()

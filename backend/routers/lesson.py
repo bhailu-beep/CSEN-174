@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from database.types.lesson import LessonOverview, TestCase
+from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
 from dependencies import (get_current_user, get_lesson_progress_service,
                           get_lesson_service)
@@ -19,6 +20,17 @@ async def get_lessons(
     lessons: Annotated[LessonService, Depends(get_lesson_service)],
 ) -> list[LessonOverview]:
     return await lessons.get_lessons(user.id)
+
+@router.get("/{lesson_id}/progress")
+async def get_lesson_progress(
+    user: Annotated[User, Depends(get_current_user)],
+    lesson_id: str,
+    lesson_progress_service: Annotated[LessonProgressService, Depends(get_lesson_progress_service)],
+) -> list[ExerciseProgress]:
+    try:
+        return await lesson_progress_service.get_lesson_progress(user.id, lesson_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.get("/{lesson_id}/exercises/{exercise_id}/tests")
 async def get_tests(

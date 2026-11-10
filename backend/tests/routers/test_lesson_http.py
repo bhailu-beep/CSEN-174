@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from database.types.lesson import LessonOverview
+from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
 from dependencies import get_lesson_progress_service, get_lesson_service, get_user_service
 from models.result import ScoredTest, SubmissionResult
@@ -50,6 +51,7 @@ def client(users: AsyncMock, lessons: AsyncMock, progress: AsyncMock) -> Iterato
 
 AUTHENTICATED_ROUTES = [
     ("GET", "/lessons/"),
+    ("GET", "/lessons/basics/progress"),
     ("GET", "/lessons/basics/exercises/sum/code"),
     ("PUT", "/lessons/basics/exercises/sum/code?code=x"),
     ("POST", "/lessons/basics/exercises/sum/run"),
@@ -169,3 +171,25 @@ def test_get_tests_unknown_exercise_is_404(client: TestClient, lessons: AsyncMoc
     lessons.get_tests.return_value = None
 
     assert client.get("/lessons/basics/exercises/nope/tests").status_code == 404
+
+
+def test_get_lesson_progress_serializes_each_exercise(client: TestClient, progress: AsyncMock) -> None:
+    progress.get_lesson_progress.return_value = [
+        ExerciseProgress(exercise_id="sum", completed=True, started=True),
+        ExerciseProgress(exercise_id="is-even", completed=False, started=False),
+    ]
+
+    response = client.get("/lessons/basics/progress", headers=AUTH)
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"exercise_id": "sum", "completed": True, "started": True},
+        {"exercise_id": "is-even", "completed": False, "started": False},
+    ]
+    progress.get_lesson_progress.assert_awaited_once_with(USER.id, "basics")
+
+
+def test_get_lesson_progress_for_an_unknown_lesson_is_404(client: TestClient, progress: AsyncMock) -> None:
+    progress.get_lesson_progress.side_effect = ValueError("Lesson missing not found")
+
+    assert client.get("/lessons/missing/progress", headers=AUTH).status_code == 404
