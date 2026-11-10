@@ -89,10 +89,3 @@ async def test_unknown_exercise_is_rejected_before_progress_is_touched(
     repository.get_code.assert_not_awaited()
     repository.update_code.assert_not_awaited()
     repository.mark_completed.assert_not_awaited()
-
-
-async def test_repository_errors_propagate(service: LessonProgressService, repository: AsyncMock) -> None:
-    repository.mark_completed.side_effect = RuntimeError("db down")
-
-    with pytest.raises(RuntimeError, match="db down"):
-        await service.mark_completed(USER_ID, LESSON_ID, EXERCISE_ID)

@@ -69,3 +69,71 @@ async def test_numbered_folder_names_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="lowercase slug"):
         await LessonRepository(tmp_path).get_lessons()
+
+
+async def test_get_exercise_raises_for_an_unknown_exercise(tmp_path: Path) -> None:
+    _exercise(tmp_path / "basics" / "sum")
+    repository = LessonRepository(tmp_path)
+
+    with pytest.raises(ValueError, match="not found in lesson basics"):
+        await repository.get_exercise("basics", "missing")
+
+
+async def test_get_exercise_raises_for_an_unknown_lesson(tmp_path: Path) -> None:
+    _exercise(tmp_path / "basics" / "sum")
+    repository = LessonRepository(tmp_path)
+
+    with pytest.raises(ValueError, match="not found in lesson loops"):
+        await repository.get_exercise("loops", "sum")
+
+
+async def test_exercise_is_looked_up_by_lesson_and_id_together(tmp_path: Path) -> None:
+    _exercise(tmp_path / "basics" / "sum")
+    _exercise(tmp_path / "loops" / "power")
+    repository = LessonRepository(tmp_path)
+
+    with pytest.raises(ValueError):
+        await repository.get_exercise("basics", "power")
+
+
+async def test_a_missing_exercises_directory_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not found"):
+        await LessonRepository(tmp_path / "nope").get_lessons()
+
+
+@pytest.mark.parametrize("missing", ["tester.cpp", "tests.txt"])
+async def test_an_exercise_missing_a_file_is_rejected(tmp_path: Path, missing: str) -> None:
+    exercise = tmp_path / "basics" / "sum"
+    _exercise(exercise)
+    (exercise / missing).unlink()
+
+    with pytest.raises(ValueError, match="is missing"):
+        await LessonRepository(tmp_path).get_lessons()
+
+
+async def test_non_slug_exercise_folder_names_are_rejected(tmp_path: Path) -> None:
+    _exercise(tmp_path / "basics" / "Sum_Two")
+
+    with pytest.raises(ValueError, match="lowercase slug"):
+        await LessonRepository(tmp_path).get_lessons()
+
+
+async def test_lessons_are_listed_in_folder_name_order(tmp_path: Path) -> None:
+    for lesson in ("loops", "arrays", "basics"):
+        _exercise(tmp_path / lesson / "one")
+
+    lessons = await LessonRepository(tmp_path).get_lessons()
+
+    assert [lesson.id for lesson in lessons] == ["arrays", "basics", "loops"]
+
+
+async def test_the_real_exercises_folder_loads() -> None:
+    lessons = await LessonRepository().get_lessons()
+
+    assert lessons
+    for lesson, exercises in lessons.items():
+        assert exercises, f"{lesson.id} has no exercises"
+        for exercise in exercises:
+            assert exercise.lesson_id == lesson.id
+            assert exercise.tester_code.strip(), f"{lesson.id}/{exercise.id} has an empty tester.cpp"
+            assert exercise.tests, f"{lesson.id}/{exercise.id} has no tests"

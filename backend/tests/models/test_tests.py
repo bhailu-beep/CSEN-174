@@ -1,16 +1,6 @@
-from pathlib import Path
-
 import pytest
 
 from models.tests import TestResult, parse_tests, sandbox_tests, score
-
-SUM_TESTS = (
-    Path(__file__).resolve().parents[3]
-    / "exercises"
-    / "basics"
-    / "sum"
-    / "tests.txt"
-)
 
 
 def test_score_keeps_each_case_independent() -> None:
@@ -37,18 +27,6 @@ def test_score_keeps_each_case_independent() -> None:
     sandbox = sandbox_tests(cases)
     assert "expected" not in sandbox
     assert "name" not in sandbox
-
-
-def test_sum_tests_file_lists_inputs_and_expected_answers() -> None:
-    cases = parse_tests(SUM_TESTS.read_text(encoding="utf-8"))
-
-    assert [(case.inputs, case.expected) for case in cases[:2]] == [
-        (("2", "3"), "5"),
-        (("-4", "4"), "0"),
-    ]
-    assert cases[-1].inputs == ("0", "0")
-    assert cases[-1].expected == "0"
-    assert "expected" not in sandbox_tests(cases)
 
 
 def test_parse_tests_rejects_a_case_without_an_expected_value() -> None:

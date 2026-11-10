@@ -112,3 +112,50 @@ async def test_count_completed_by_lesson_ignores_unfinished_and_other_users(
     await lesson_progress.mark_completed(grace, "basics", "sum")
 
     assert await lesson_progress.count_completed_by_lesson(ada) == {"basics": 1, "loops": 1}
+
+
+async def test_mark_completed_is_idempotent_and_keeps_saved_code(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+    await lesson_progress.update_code(user_id, "basics", "sum", "my code")
+
+    await lesson_progress.mark_completed(user_id, "basics", "sum")
+    await lesson_progress.mark_completed(user_id, "basics", "sum")
+
+    assert await lesson_progress.get_code(user_id, "basics", "sum") == "my code"
+    assert await lesson_progress.count_completed_by_lesson(user_id) == {"basics": 1}
+
+
+async def test_mark_completed_creates_a_row_when_the_exercise_has_no_progress(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+
+    await lesson_progress.mark_completed(user_id, "basics", "sum")
+
+    assert await lesson_progress.count_completed_by_lesson(user_id) == {"basics": 1}
+
+
+async def test_update_code_keeps_the_completed_flag(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+    await lesson_progress.update_code(user_id, "basics", "sum", "first try")
+    await lesson_progress.mark_completed(user_id, "basics", "sum")
+
+    await lesson_progress.update_code(user_id, "basics", "sum", "edited after solving")
+
+    assert await lesson_progress.count_completed_by_lesson(user_id) == {"basics": 1}
+
+
+async def test_count_completed_by_lesson_is_empty_without_progress(
+    lesson_progress: LessonProgressRepository,
+    db_pool: asyncpg.Pool,
+) -> None:
+    user_id = await _insert_user(db_pool, "ada")
+
+    assert await lesson_progress.count_completed_by_lesson(user_id) == {}

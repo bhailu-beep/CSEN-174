@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from database.types.lesson import Exercise, Lesson, LessonOverview
 from models.result import RunResult, Stage
 from models.tests import TestCase, TestResult
@@ -78,3 +80,97 @@ async def test_run_code_does_not_mark_completed_when_a_test_fails() -> None:
 
     assert submission.status == "failed"
     progress.mark_completed.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        _finished(stage=Stage.COMPILE),
+        _finished(timed_out=True),
+        _finished(),
+        RunResult.error("Docker is not available."),
+    ],
+    ids=["compilation_error", "timeout", "execution_error", "runner_error"],
+)
+async def test_run_code_does_not_mark_completed_for_non_passing_statuses(result: RunResult) -> None:
+    catalog = AsyncMock()
+    catalog.get_exercise.return_value = _exercise("basics", "sum")
+    progress = AsyncMock()
+    runner = MagicMock()
+    runner.run.return_value = result
+    service = LessonService(catalog, progress, runner)
+
+    submission = await service.run_code(4, "basics", "sum", "code")
+
+    assert submission.status != "passed"
+    progress.mark_completed.assert_not_awaited()
+
+
+async def test_run_code_does_not_mark_completed_when_only_some_tests_pass() -> None:
+    catalog = AsyncMock()
+    catalog.get_exercise.return_value = _exercise("basics", "sum")
+    progress = AsyncMock()
+    runner = MagicMock()
+    runner.run.return_value = _finished(
+        TestResult(passed=True, expected="5", actual="5"),
+        TestResult(passed=False, expected="4", actual="0"),
+    )
+    service = LessonService(catalog, progress, runner)
+
+    submission = await service.run_code(4, "basics", "sum", "code")
+
+    assert submission.status == "failed"
+    progress.mark_completed.assert_not_awaited()
+
+
+async def test_run_code_for_an_unknown_exercise_never_reaches_the_runner() -> None:
+    catalog = AsyncMock()
+    catalog.get_exercise.side_effect = ValueError("Exercise nope not found in lesson basics")
+    progress = AsyncMock()
+    runner = MagicMock()
+    service = LessonService(catalog, progress, runner)
+
+    with pytest.raises(ValueError, match="not found"):
+        await service.run_code(4, "basics", "nope", "code")
+
+    runner.run.assert_not_called()
+    progress.mark_completed.assert_not_awaited()
+
+
+async def test_run_code_reports_compiler_output_for_a_compile_failure() -> None:
+    catalog = AsyncMock()
+    catalog.get_exercise.return_value = _exercise("basics", "sum")
+    runner = MagicMock()
+    runner.run.return_value = _finished(stage=Stage.COMPILE)
+    service = LessonService(catalog, AsyncMock(), runner)
+
+    submission = await service.run_code(4, "basics", "sum", "int sum(")
+
+    assert submission.status == "compilation_error"
+    assert submission.compiler_output == "g++ error"
+
+
+async def test_get_tests_returns_the_exercises_cases() -> None:
+    cases = [TestCase(inputs=("2", "3"), expected="5")]
+    catalog = AsyncMock()
+    catalog.get_exercise.return_value = Exercise(id="sum", lesson_id="basics", tester_code="", tests=cases)
+    service = LessonService(catalog, AsyncMock(), MagicMock())
+
+    assert await service.get_tests("basics", "sum") == cases
+
+
+async def test_get_tests_returns_none_for_an_unknown_exercise() -> None:
+    catalog = AsyncMock()
+    catalog.get_exercise.side_effect = ValueError("Exercise nope not found in lesson basics")
+    service = LessonService(catalog, AsyncMock(), MagicMock())
+
+    assert await service.get_tests("basics", "nope") is None
+
+
+async def test_get_lessons_with_no_lessons_is_empty() -> None:
+    catalog = AsyncMock()
+    catalog.get_lessons.return_value = {}
+    progress = AsyncMock()
+    progress.count_completed_by_lesson.return_value = {}
+
+    assert await LessonService(catalog, progress, MagicMock()).get_lessons(4) == []

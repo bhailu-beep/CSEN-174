@@ -177,7 +177,7 @@ def _run_with_exit(
 
 
 def test_runtime_crash_does_not_score_stdout(tmp_path: Path) -> None:
-    # Exit code 139 (segfault) is ok=True but non-zero, so N13 is false.
+    # Exit code 139 (segfault) is ok=True but non-zero, so its stdout is not scored.
     crashed = RunResult.from_exit(139, '{"actual":"3"}\n', "Segmentation fault")
     result = _run_with_exit(tmp_path, crashed, [TestCase(inputs=("1", "2"), expected="3")])
 
