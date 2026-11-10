@@ -59,7 +59,11 @@ class UserService:
 
     async def create_user(self, username: str, password: str) -> str | None:
         hashed_password = await self._hash_password(password)
-        user = await self.user_repository.create_user(username, hashed_password)
+        try:
+            user = await self.user_repository.create_user(username, hashed_password)
+        except ValueError:
+            # The username is already taken.
+            return None
         return self._issue_token(user)
 
     async def user_from_token(self, token: str) -> User | None:

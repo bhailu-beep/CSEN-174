@@ -57,3 +57,37 @@ async def test_values_are_stored_verbatim(user_repository: UserRepository) -> No
 async def test_get_user_by_id_unknown_id(user_repository: UserRepository) -> None:
     with pytest.raises(ValueError):
         await user_repository.get_user_by_id(999_999)
+
+
+async def test_create_user_rejects_a_duplicate_username(user_repository: UserRepository) -> None:
+    await user_repository.create_user("ada", "hash-1")
+
+    with pytest.raises(ValueError, match="already taken"):
+        await user_repository.create_user("ada", "hash-2")
+
+
+async def test_create_user_rejects_a_username_that_differs_only_by_case(user_repository: UserRepository) -> None:
+    await user_repository.create_user("ada", "hash-1")
+
+    with pytest.raises(ValueError, match="already taken"):
+        await user_repository.create_user("ADA", "hash-2")
+
+
+async def test_a_rejected_duplicate_does_not_replace_the_original(user_repository: UserRepository) -> None:
+    original = await user_repository.create_user("ada", "hash-1")
+    with pytest.raises(ValueError):
+        await user_repository.create_user("ada", "hash-2")
+
+    assert await user_repository.get_user_by_id(original.id) == original
+
+
+async def test_get_user_by_username_ignores_case(user_repository: UserRepository) -> None:
+    created = await user_repository.create_user("Ada", "hash-1")
+
+    assert await user_repository.get_user_by_username("ada") == created
+    assert await user_repository.get_user_by_username("ADA") == created
+
+
+async def test_get_user_by_username_unknown_username(user_repository: UserRepository) -> None:
+    with pytest.raises(ValueError):
+        await user_repository.get_user_by_username("ghost")

@@ -104,6 +104,13 @@ async def test_create_user_stores_a_hash_and_returns_a_token() -> None:
     assert payload["username"] == "grace"
 
 
+async def test_create_user_returns_none_when_the_username_is_taken() -> None:
+    repository = AsyncMock()
+    repository.create_user.side_effect = ValueError("Username grace is already taken")
+
+    assert await UserService(repository).create_user("grace", "secret") is None
+
+
 # --- user_from_token ---
 
 

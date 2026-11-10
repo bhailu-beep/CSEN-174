@@ -77,3 +77,13 @@ async def test_register_route_returns_400_when_registration_fails() -> None:
         await register(RegisterRequest(username="grace", password="secret"), Response(), user_service=users)
 
     assert exc.value.status_code == 400
+
+
+async def test_register_route_explains_that_the_username_is_taken() -> None:
+    users = _users()
+    users.create_user.return_value = None
+
+    with pytest.raises(HTTPException) as exc:
+        await register(RegisterRequest(username="grace", password="secret"), Response(), user_service=users)
+
+    assert "already taken" in exc.value.detail

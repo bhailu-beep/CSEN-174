@@ -51,7 +51,7 @@ async def register(
 ):
     token = await user_service.create_user(body.username, body.password)
     if token is None:
-        raise HTTPException(status_code = 400, detail = "Failed to register user")
+        raise HTTPException(status_code = 400, detail = "Username is already taken")
     response.set_cookie(
         key = "access_token",
         value = token,

@@ -4,6 +4,9 @@ CREATE TABLE users (
     hashed_password TEXT NOT NULL
 );
 
+-- Usernames are unique regardless of case, so "Ada" and "ada" are the same account.
+CREATE UNIQUE INDEX users_username_lower_key ON users (LOWER(username));
+
 CREATE TABLE lesson_progress (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,

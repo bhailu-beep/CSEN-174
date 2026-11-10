@@ -1,4 +1,4 @@
-from asyncpg import Connection
+from asyncpg import Connection, UniqueViolationError
 from pydantic import BaseModel
 
 
@@ -12,11 +12,14 @@ class UserRepository:
         self.connection = connection
 
     async def create_user(self, username: str, hashed_password: str) -> User:
-        user_id = await self.connection.fetchval(
-            "INSERT INTO users (username, hashed_password) VALUES ($1, $2) RETURNING id",
-            username,
-            hashed_password
-        )
+        try:
+            user_id = await self.connection.fetchval(
+                "INSERT INTO users (username, hashed_password) VALUES ($1, $2) RETURNING id",
+                username,
+                hashed_password
+            )
+        except UniqueViolationError:
+            raise ValueError(f"Username {username} is already taken") from None
         return User(id=user_id, username=username, hashed_password=hashed_password)
 
     async def get_user_by_id(self, id: int) -> User:
@@ -30,7 +33,7 @@ class UserRepository:
 
     async def get_user_by_username(self, username: str) -> User:
         result = await self.connection.fetchrow(
-            "SELECT id, username, hashed_password FROM users WHERE username = $1",
+            "SELECT id, username, hashed_password FROM users WHERE LOWER(username) = LOWER($1)",
             username
         )
         if result is None:
