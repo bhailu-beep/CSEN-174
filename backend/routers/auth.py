@@ -36,6 +36,16 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     )
 
 
+def _clear_refresh_cookie(response: Response) -> None:
+    # Must use the same path and flags as _set_refresh_cookie, or the browser keeps the cookie.
+    response.delete_cookie(
+        key = REFRESH_COOKIE_NAME,
+        httponly = True,
+        samesite = "lax",
+        path = "/auth",
+    )
+
+
 def _issue_auth_response(response: Response, tokens: TokenPair) -> AccessTokenResponse:
     _set_refresh_cookie(response, tokens.refresh_token)
     return AccessTokenResponse(access_token = tokens.access_token)
@@ -66,6 +76,13 @@ async def refresh(
     if tokens is None:
         raise HTTPException(status_code = 401, detail = "Invalid refresh token")
     return _issue_auth_response(response, tokens)
+
+
+@router.post("/logout", status_code = 204)
+async def logout(response: Response) -> None:
+    # No login required, so it still works after the access token has expired.
+    # This only clears the browser's cookie. The refresh token itself is not revoked server-side.
+    _clear_refresh_cookie(response)
 
 
 @router.get("/me")

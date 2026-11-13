@@ -13,6 +13,7 @@ from routers.auth import (
     PublicUser,
     RegisterRequest,
     login,
+    logout,
     me,
     refresh,
     register,
@@ -138,3 +139,24 @@ async def test_register_route_explains_that_the_username_is_taken() -> None:
         await register(RegisterRequest(username="grace", password="secret"), Response(), user_service=users)
 
     assert "already taken" in exc.value.detail
+
+
+async def test_logout_route_clears_the_refresh_cookie() -> None:
+    response = Response()
+
+    assert await logout(response) is None
+
+    cookie = response.headers["set-cookie"].lower()
+    assert "refresh_token=" in cookie
+    assert "max-age=0" in cookie
+    assert "path=/auth" in cookie
+    assert "httponly" in cookie
+
+
+async def test_logout_route_does_not_touch_the_user_service() -> None:
+    users = _users()
+
+    await logout(Response())
+
+    users.user_from_token.assert_not_awaited()
+    users.refresh.assert_not_awaited()
