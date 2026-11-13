@@ -16,6 +16,7 @@ from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
 from dependencies import get_lesson_progress_service, get_lesson_service, get_user_service
 from models.result import ScoredTest, SubmissionResult
+from models.tests import TestCase
 from routers.lesson import router
 
 USER = User(id=4, username="ada", hashed_password="irrelevant")
@@ -208,6 +209,27 @@ def test_run_for_an_unknown_exercise_is_404(client: TestClient, lessons: AsyncMo
     response = client.post("/lessons/basics/exercises/nope/run", json={"code": "x"}, headers=AUTH)
 
     assert response.status_code == 404
+
+
+def test_get_tests_is_public_and_returns_inputs_and_expected_values(
+    client: TestClient, lessons: AsyncMock, users: AsyncMock
+) -> None:
+    # Intentional: this is a learning platform, so the tests are visible. They are not user-specific,
+    # so the route needs no login. If you add auth here, update AGENTS.md and the plan too.
+    lessons.get_tests.return_value = [
+        TestCase(inputs=("2", "3"), expected="5"),
+        TestCase(inputs=("-4", "4"), expected="0"),
+    ]
+
+    response = client.get("/lessons/basics/exercises/sum/tests")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"inputs": ["2", "3"], "expected": "5"},
+        {"inputs": ["-4", "4"], "expected": "0"},
+    ]
+    lessons.get_tests.assert_awaited_once_with("basics", "sum")
+    users.user_from_token.assert_not_awaited()
 
 
 def test_get_tests_unknown_exercise_is_404(client: TestClient, lessons: AsyncMock) -> None:
