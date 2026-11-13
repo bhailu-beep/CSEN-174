@@ -32,13 +32,13 @@ Docker sandbox (backend/sandbox/) -> g++ + C++ test harness
 ## Hard rules
 
 - **Never compile or run student C++ in the Next.js or FastAPI process.** Untrusted code is compiled and run only inside the Docker sandbox; the backend's `runner` package merely launches and monitors that container.
-- **Hidden tests never reach the browser.** The client sends the lesson id, the exercise id, and `code`.
-- The frontend must not know about `g++`, Docker, resource limits, exit-code interpretation, workspaces, or hidden test locations.
+- **The client never sends tests or expected answers.** It sends the lesson id, the exercise id, and `code`; the backend owns the tests and does the scoring. Tests are not secret, because this is a learning platform: `GET /lessons/{lessonId}/exercises/{exerciseId}/tests` is public (the tests are not user-specific, so it needs no login), and `/run` returns the expected value for each test.
+- The frontend must not know about `g++`, Docker, resource limits, exit-code interpretation, workspaces, or where test files live on disk.
 - Route handlers call `runner.run_cpp(...)` directly (no separate execution service, no HTTP hop). The runner uses blocking `subprocess` calls, so run it off the event loop (sync handler / `run_in_threadpool`).
 - Docker sandbox: network disabled, non-root, ~0.5–1 CPU, ~128–256 MB, limited processes, read-only root FS with a small tmpfs `/tmp`, all capabilities dropped, exec timeout ~2–5s, compile timeout ~5–10s, one container per submission, **never** privileged, **never** expose the Docker socket, always clean up temp resources.
 - Do not describe Docker as production-grade hostile-code security.
-- Centralize `localStorage` access in `web/lib/storage/` (`codeStorage.ts`, `progressStorage.ts`); keys prefixed `cpp-platform:`. Handle storage being cleared or unavailable. Never store secrets or hidden tests.
-- An exercise is **solved only when all hidden tests pass**.
+- Centralize `localStorage` access in `web/lib/storage/` (`codeStorage.ts`, `progressStorage.ts`); keys prefixed `cpp-platform:`. Handle storage being cleared or unavailable. Never store secrets.
+- An exercise is **solved only when all tests pass**.
 
 ## Result contract
 
