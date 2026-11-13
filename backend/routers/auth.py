@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from database.types.user import User
 from dependencies import get_current_user, get_user_service
 from services.user import REFRESH_TOKEN_TTL_SECONDS, TokenPair, UserService
@@ -9,6 +9,8 @@ from services.user import REFRESH_TOKEN_TTL_SECONDS, TokenPair, UserService
 router = APIRouter(prefix = "/auth", tags = ["auth"])
 
 REFRESH_COOKIE_NAME = "refresh_token"
+MIN_PASSWORD_LENGTH = 6
+MAX_PASSWORD_BYTES = 72  # bcrypt's limit
 
 
 class LoginRequest(BaseModel):
@@ -91,8 +93,17 @@ async def me(user: Annotated[User, Depends(get_current_user)]) -> PublicUser:
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    # Same rules the signup form shows, enforced here so the API does not depend on the UI.
+    username: str = Field(pattern = r"^[A-Za-z0-9_]{3,20}$")
+    password: str = Field(min_length = MIN_PASSWORD_LENGTH)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        # bcrypt rejects anything over 72 bytes, which would otherwise surface as a 500.
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError(f"Password must be at most {MAX_PASSWORD_BYTES} bytes")
+        return value
 
 
 @router.post("/register")
