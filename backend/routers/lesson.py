@@ -1,5 +1,6 @@
 from typing import Annotated
 
+from config import MAX_SOURCE_BYTES
 from database.types.lesson import LessonOverview, TestCase
 from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
@@ -7,7 +8,7 @@ from dependencies import (get_current_user, get_lesson_progress_service,
                           get_lesson_service)
 from fastapi import APIRouter, Depends, HTTPException
 from models.result import SubmissionResult
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from services.lesson import LessonService
 from services.lesson_progress import LessonProgressService
 
@@ -58,16 +59,21 @@ async def get_code(
         return ""
     return code
 
+class SaveCodeRequest(BaseModel):
+    # Same cap the runner applies to submitted source, so saved code can always be run.
+    code: str = Field(max_length=MAX_SOURCE_BYTES)
+
+
 @router.put("/{lesson_id}/exercises/{exercise_id}/code")
 async def update_code(
     user: Annotated[User, Depends(get_current_user)],
     lesson_id: str,
     exercise_id: str,
-    code: str,
+    body: SaveCodeRequest,
     lesson_progress_service: Annotated[LessonProgressService, Depends(get_lesson_progress_service)],
 ) -> None:
     try:
-        await lesson_progress_service.update_code(user.id, lesson_id, exercise_id, code)
+        await lesson_progress_service.update_code(user.id, lesson_id, exercise_id, body.code)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

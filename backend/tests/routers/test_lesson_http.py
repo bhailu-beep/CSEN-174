@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from config import MAX_SOURCE_BYTES
 from database.types.lesson import LessonOverview
 from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
@@ -118,18 +119,60 @@ def test_get_code_for_an_unknown_exercise_is_404(client: TestClient, progress: A
     assert "not found" in response.json()["detail"]
 
 
-def test_put_code_saves_the_query_parameter_for_the_current_user(client: TestClient, progress: AsyncMock) -> None:
-    response = client.put("/lessons/basics/exercises/sum/code", params={"code": "int y;"}, headers=AUTH)
+def test_put_code_saves_the_json_body_for_the_current_user(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", json={"code": "int y;"}, headers=AUTH)
 
     assert response.status_code == 200
     progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", "int y;")
 
 
-def test_put_code_without_code_is_a_validation_error(client: TestClient, progress: AsyncMock) -> None:
-    response = client.put("/lessons/basics/exercises/sum/code", headers=AUTH)
+def test_put_code_keeps_newlines_quotes_and_symbols_intact(client: TestClient, progress: AsyncMock) -> None:
+    code = '#include <iostream>\nint main() {\n    std::cout << "a&b=c+d%20";\n}\n'
+
+    client.put("/lessons/basics/exercises/sum/code", json={"code": code}, headers=AUTH)
+
+    progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", code)
+
+
+def test_put_code_accepts_code_far_longer_than_a_url_allows(client: TestClient, progress: AsyncMock) -> None:
+    code = "// filler\n" * 20_000
+
+    response = client.put("/lessons/basics/exercises/sum/code", json={"code": code}, headers=AUTH)
+
+    assert response.status_code == 200
+    progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", code)
+
+
+def test_put_code_rejects_code_over_the_source_limit(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put(
+        "/lessons/basics/exercises/sum/code", json={"code": "x" * (MAX_SOURCE_BYTES + 1)}, headers=AUTH
+    )
 
     assert response.status_code == 422
     progress.update_code.assert_not_awaited()
+
+
+@pytest.mark.parametrize("body", [None, {}, {"code": 5}, {"source": "x"}])
+def test_put_code_rejects_a_bad_body(client: TestClient, progress: AsyncMock, body: dict | None) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", json=body, headers=AUTH)
+
+    assert response.status_code == 422
+    progress.update_code.assert_not_awaited()
+
+
+def test_put_code_no_longer_accepts_the_code_as_a_query_parameter(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", params={"code": "int y;"}, headers=AUTH)
+
+    assert response.status_code == 422
+    progress.update_code.assert_not_awaited()
+
+
+def test_put_code_for_an_unknown_exercise_is_404(client: TestClient, progress: AsyncMock) -> None:
+    progress.update_code.side_effect = ValueError("Exercise nope not found in lesson basics")
+
+    response = client.put("/lessons/basics/exercises/nope/code", json={"code": "x"}, headers=AUTH)
+
+    assert response.status_code == 404
 
 
 def test_run_returns_the_scored_submission_shape(client: TestClient, lessons: AsyncMock) -> None:

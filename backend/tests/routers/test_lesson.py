@@ -8,8 +8,8 @@ from database.types.lesson import LessonOverview
 from database.types.lesson_progress import ExerciseProgress
 from models.result import SubmissionResult
 from models.tests import TestCase
-from routers.lesson import (RunCodeRequest, get_code, get_lesson_progress, get_lessons, get_tests, run_code,
-                            update_code)
+from routers.lesson import (RunCodeRequest, SaveCodeRequest, get_code, get_lesson_progress, get_lessons, get_tests,
+                            run_code, update_code)
 
 USER = User(id=4, username="ada", hashed_password="irrelevant")
 
@@ -22,7 +22,7 @@ async def test_code_routes_return_404_when_the_exercise_is_missing() -> None:
     with pytest.raises(HTTPException) as get_exc:
         await get_code(USER, "basics", "missing", progress)
     with pytest.raises(HTTPException) as update_exc:
-        await update_code(USER, "basics", "missing", "int x;", progress)
+        await update_code(USER, "basics", "missing", SaveCodeRequest(code="int x;"), progress)
 
     assert get_exc.value.status_code == 404
     assert update_exc.value.status_code == 404
@@ -65,7 +65,7 @@ async def test_get_code_returns_an_empty_string_when_nothing_is_saved() -> None:
 async def test_update_code_saves_the_code_for_the_current_user() -> None:
     progress = AsyncMock()
 
-    assert await update_code(USER, "basics", "sum", "int x;", progress) is None
+    assert await update_code(USER, "basics", "sum", SaveCodeRequest(code="int x;"), progress) is None
     progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", "int x;")
 
 
