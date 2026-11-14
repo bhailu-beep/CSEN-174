@@ -1,35 +1,73 @@
-// Tests for the prototype login in src/lib/auth.ts.
-import { beforeEach, describe, expect, it } from "vitest";
-import { currentUser, DEMO_PASSWORD, DEMO_USERNAME, login, logout, signup } from "@/lib/auth";
+// Tests for src/lib/auth.ts with fetch mocked (the backend owns the real accounts).
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getAccessToken, setAccessToken } from "@/lib/api";
+import { login, logout, register, restoreSession, validateCredentials } from "@/lib/auth";
 
-beforeEach(() => localStorage.clear());
+const json = (status: number, body?: unknown) =>
+  new Response(body === undefined ? null : JSON.stringify(body), { status });
 
-describe("prototype login (username + password, no email)", () => {
-  it("logs in with the demo account", () => {
-    expect(login(DEMO_USERNAME, DEMO_PASSWORD)).toBe(true);
-    expect(currentUser()).toBe("student");
+let fetchMock: ReturnType<typeof vi.fn>;
+beforeEach(() => {
+  fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  setAccessToken(null);
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe("validateCredentials", () => {
+  it("accepts a good username and password", () => expect(validateCredentials("bemmy_h", "secret1")).toBeNull());
+  it("rejects bad usernames", () => {
+    expect(validateCredentials("ab", "secret1")).toMatch(/Username/);
+    expect(validateCredentials("has space", "secret1")).toMatch(/Username/);
+  });
+  it("rejects too short or too long passwords", () => {
+    expect(validateCredentials("zack", "123")).toMatch(/Password/);
+    expect(validateCredentials("zack", "x".repeat(73))).toMatch(/Password/);
+  });
+});
+
+describe("register / login / logout", () => {
+  it("login stores the access token and returns the user", async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(200, { access_token: "tok" }))
+      .mockResolvedValueOnce(json(200, { id: 1, username: "lori" }));
+    expect(await login(" lori ", "secret1")).toEqual({ id: 1, username: "lori" });
+    expect(getAccessToken()).toBe("tok");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ username: "lori", password: "secret1" });
   });
 
-  it("signs up, logs out, and logs back in", () => {
-    expect(signup("bemmy_h", "secret1")).toBeNull();
-    expect(currentUser()).toBe("bemmy_h");
-    logout();
-    expect(currentUser()).toBeNull();
-    expect(login("BEMMY_H", "secret1")).toBe(true);
+  it("register posts to /auth/register", async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(200, { access_token: "tok" }))
+      .mockResolvedValueOnce(json(200, { id: 2, username: "zack" }));
+    await register("zack", "secret1");
+    expect(fetchMock.mock.calls[0][0]).toContain("/auth/register");
   });
 
-  it("rejects a wrong password", () => {
-    signup("lori", "secret1");
-    logout();
-    expect(login("lori", "wrong12")).toBe(false);
+  it("a wrong password rejects with the backend message and stores no token", async () => {
+    fetchMock.mockResolvedValueOnce(json(401, { detail: "Invalid username or password" }));
+    await expect(login("lori", "wrong12")).rejects.toThrow("Invalid username or password");
+    expect(getAccessToken()).toBeNull();
   });
 
-  it("validates username, password, and duplicates", () => {
-    expect(signup("ab", "secret1")).toMatch(/Username/);
-    expect(signup("has space", "secret1")).toMatch(/Username/);
-    expect(signup("zack", "123")).toMatch(/Password/);
-    signup("zack", "secret1");
-    expect(signup("ZACK", "secret1")).toMatch(/taken/);
-    expect(signup("student", "secret1")).toMatch(/taken/);
+  it("logout clears the token even if the request fails", async () => {
+    setAccessToken("tok");
+    fetchMock.mockRejectedValueOnce(new TypeError("offline"));
+    await expect(logout()).rejects.toThrow();
+    expect(getAccessToken()).toBeNull();
+  });
+});
+
+describe("restoreSession", () => {
+  it("returns null with no refresh cookie", async () => {
+    fetchMock.mockResolvedValueOnce(json(401, { detail: "Missing refresh token" }));
+    expect(await restoreSession()).toBeNull();
+  });
+
+  it("returns the user when the refresh cookie is valid", async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(200, { access_token: "tok" }))
+      .mockResolvedValueOnce(json(200, { id: 1, username: "lori" }));
+    expect(await restoreSession()).toEqual({ id: 1, username: "lori" });
   });
 });

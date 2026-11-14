@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { Exercise } from "@/lib/exercises";
-import type { Status } from "@/lib/storage/progressStorage";
+import type { Status } from "@/lib/progress";
+import Link from "next/link";
 
 // One exercise in a list. Shows its tags and whether it's solved or in progress.
 export default function ExerciseCard({ exercise, status, topicName }: { exercise: Exercise; status?: Status; topicName?: string }) {

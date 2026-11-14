@@ -16,7 +16,7 @@ You need **Node.js 20 or newer** (check with `node --version`).
    ```bash
    npm run dev
    ```
-5. Open http://localhost:3000. Click **Try Demo Account** on the login page (or log in as `student` / `Demo123!`), or sign up with any username.
+5. Open http://localhost:3000 and sign up. The backend must be running (see `docs/development.md`).
 
 Press `Ctrl + C` in the terminal to stop it.
 
@@ -24,7 +24,7 @@ Press `Ctrl + C` in the terminal to stop it.
 
 | Command |
 |---|---|
-| `npm test` | Runs the automated tests (25 tests in `tests/`) |
+| `npm test` | Runs the automated tests in `tests/` (`fetch` is mocked, no backend needed) |
 | `npm run build` | Checks everything compiles, like the real deployment would |
 | `npm start` | Runs the built version (after `npm run build`) |
 
@@ -38,11 +38,10 @@ Press `Ctrl + C` in the terminal to stop it.
 | `/topics/<topic>` | A quick lesson, then the exercises for one topic, e.g. `/topics/loops` |
 | `/topics/all` | **Full C++**: every exercise, with search, topic filters, and a random pick |
 | `/exercises/<slug>` | Problem, examples, hint, Monaco editor, test results |
-| `/profile` | Stats, progress by topic, reset progress |
+| `/profile` | Stats and progress by topic |
 
-## Placeholders until the backend is ready
+## What lives where
 
-- `src/lib/runCode.ts`: Run Code shows **sample** results; code is not actually compiled.
-- `src/lib/exercises.ts` and `src/lib/lessons.ts`: the 24 exercises and 8 lessons are written in the frontend for now.
-- `src/lib/auth.ts`: login is saved in the browser only and is **not secure**.
-
+- The **backend** owns accounts, tests and scoring, saved code, and progress. `src/lib/api.ts` is the only place that calls it.
+- `src/lib/exercises.ts`, `src/lib/lessons.ts`: problem text, hints, starter code and lessons live in the frontend.
+- `.env.local` sets `NEXT_PUBLIC_API_URL` (copy `.env.example`).

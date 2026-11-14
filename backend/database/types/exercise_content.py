@@ -9,7 +9,7 @@ CONTENT_PATH = Path(__file__).resolve().parents[2] / "content" / "exercises.json
 
 
 class ExerciseText(BaseModel):
-    """Public text for one exercise. This is not the hidden tests."""
+    """Public text for one exercise. Tests are public and served separately."""
 
     id: str
     slug: str

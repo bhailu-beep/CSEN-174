@@ -2,17 +2,17 @@
 
 // Topic page (/topics/<id>): the lesson, then that topic's exercises.
 // /topics/all is the Full C++ page: every exercise, with search, topic filters, and a random pick.
+import ExerciseCard from "@/components/ExerciseCard";
+import Lesson from "@/components/Lesson";
+import ProgressBar from "@/components/ProgressBar";
+import ProtectedPage from "@/components/ProtectedPage";
+import { exercises, exercisesInTopic, filterExercises } from "@/lib/exercises";
+import { findLesson } from "@/lib/lessons";
+import { fetchStatuses, statusOf, type StatusMap } from "@/lib/progress";
+import { ALL_TOPICS_ID, findTopic, topics } from "@/lib/topics";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import ProtectedPage from "@/components/ProtectedPage";
-import ProgressBar from "@/components/ProgressBar";
-import ExerciseCard from "@/components/ExerciseCard";
-import Lesson from "@/components/Lesson";
-import { exercises, exercisesInTopic, filterExercises } from "@/lib/exercises";
-import { ALL_TOPICS_ID, findTopic, topics } from "@/lib/topics";
-import { findLesson } from "@/lib/lessons";
-import { getStatuses, type Status } from "@/lib/storage/progressStorage";
 
 export default function TopicPage() {
   const { topic: topicId } = useParams<{ topic: string }>();
@@ -20,12 +20,18 @@ export default function TopicPage() {
   const isAll = topicId === ALL_TOPICS_ID; // true on the Full C++ page
   const topic = findTopic(topicId);
 
-  const [statuses, setStatuses] = useState<Record<string, Status>>({});
+  const [error, setError] = useState("");
+  const [statuses, setStatuses] = useState<StatusMap>({});
   const [search, setSearch] = useState("");
   const [topicFilter, setTopicFilter] = useState<string | null>(null);
   const exercisesRef = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => setStatuses(getStatuses(exercises)), []);
+  useEffect(() => {
+    if (!isAll && !topic) return;
+    fetchStatuses(isAll ? topics.map((t) => t.id) : [topicId])
+      .then(setStatuses)
+      .catch((e) => setError(e instanceof Error ? e.message : "Something went wrong"));
+  }, [isAll, topic, topicId]);
 
   if (!isAll && !topic) {
     return (
@@ -41,7 +47,7 @@ export default function TopicPage() {
   const lesson = isAll ? undefined : findLesson(topicId);
   const list = isAll ? exercises : exercisesInTopic(topicId);
   const shown = isAll ? filterExercises(list, search, topicFilter) : list;
-  const solved = list.filter((e) => statuses[e.id] === "solved").length;
+  const solved = list.filter((e) => statusOf(statuses, e) === "solved").length;
 
   // Scroll down from the lesson to the exercise list.
   function scrollToExercises() {
@@ -114,7 +120,7 @@ export default function TopicPage() {
               <ExerciseCard
                 key={exercise.id}
                 exercise={exercise}
-                status={statuses[exercise.id]}
+                status={statusOf(statuses, exercise)}
                 topicName={isAll ? findTopic(exercise.topic)?.name : undefined}
               />
             ))}

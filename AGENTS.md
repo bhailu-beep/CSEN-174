@@ -11,7 +11,7 @@ A free, self-hostable CodingBat-style practice site for **C++ function-style exe
 > Thin frontend, server-owned application logic, isolated code execution.
 
 ```text
-web/ (Next.js, React, TS, Monaco)
+frontend/ (Next.js, React, TS, Monaco)
    -> HTTP JSON ->
 backend/ (FastAPI, Python)
    -> backend/runner/ (Python package, in-process call) ->
@@ -20,8 +20,8 @@ Docker sandbox (backend/sandbox/) -> g++ + C++ test harness
 
 | Dir | Responsibility |
 |---|---|
-| `web/` | UI, Monaco state, loading/error states, rendering results, `localStorage` |
-| `backend/` | HTTP API, validation, exercise metadata/content, calls the runner, maps runner results to JSON |
+| `frontend/` | UI, Monaco state, loading/error states, rendering results, lesson and problem text, the access token (in memory) |
+| `backend/` | HTTP API, accounts and auth, validation, tests and scoring, saved code and progress (PostgreSQL), calls the runner, maps runner results to JSON |
 | `backend/runner/` | Temp workspaces, Docker run, limits, output capping, JSONL parsing, cleanup (orchestrates Docker only; never compiles or runs C++ on the host) |
 | `backend/sandbox/` | Sandbox image (`Dockerfile`), in-container `run.sh` (g++ compile + run with timeouts), and the shared C++ test harness `harness.h` (`check`, `to_str`, `json_escape`) |
 | `exercises/` | Lesson folders (`basics/`), each holding exercise folders (`sum/`) with `tester.cpp` and `tests.txt` only. Problem text, hints, and starter code live in the frontend |
@@ -37,7 +37,7 @@ Docker sandbox (backend/sandbox/) -> g++ + C++ test harness
 - Route handlers call `runner.run_cpp(...)` directly (no separate execution service, no HTTP hop). The runner uses blocking `subprocess` calls, so run it off the event loop (sync handler / `run_in_threadpool`).
 - Docker sandbox: network disabled, non-root, ~0.5–1 CPU, ~128–256 MB, limited processes, read-only root FS with a small tmpfs `/tmp`, all capabilities dropped, exec timeout ~2–5s, compile timeout ~5–10s, one container per submission, **never** privileged, **never** expose the Docker socket, always clean up temp resources.
 - Do not describe Docker as production-grade hostile-code security.
-- Centralize `localStorage` access in `web/lib/storage/` (`codeStorage.ts`, `progressStorage.ts`); keys prefixed `cpp-platform:`. Handle storage being cleared or unavailable. Never store secrets.
+- Accounts, saved code, and progress live on the server. The access token is kept in React state / memory only; the refresh token is an httpOnly cookie. All HTTP goes through `frontend/src/lib/api.ts`. `localStorage` is only for local-only UI settings, accessed through `frontend/src/lib/storage/local.ts` (keys prefixed `cpp-platform:`); handle it being cleared or unavailable. Never store secrets or tokens there.
 - An exercise is **solved only when all tests pass**.
 
 ## Result contract
@@ -65,7 +65,20 @@ The sandbox prints one JSON line per test, `{"actual"}`, in test order. Python c
 
 ## Scope discipline (do not overbuild)
 
-Out of scope until the core works: authentication, user profiles, databases, server-side progress, submission history, leaderboards, multiple languages, queues/workers, advanced sandboxing, admin dashboard. Keep the HTTP API minimal (`GET /lessons`, `GET /lessons/{lessonId}/exercises/{exerciseId}`, `POST /lessons/{lessonId}/exercises/{exerciseId}/run`) and grow it only for real features. Don't optimize deployment before local works.
+Built: username/password auth (JWT access token + refresh cookie), PostgreSQL, saved code, per-exercise progress. Still out of scope: submission history, leaderboards, multiple languages, queues/workers, advanced sandboxing, admin dashboard, a progress-reset route. Grow the HTTP API only for real features. Don't optimize deployment before local works.
+
+Current API (auth = `Authorization: Bearer <access token>`):
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `POST /auth/register`, `POST /auth/login` | no | body `{username, password}`; returns `{access_token}` and sets the refresh cookie |
+| `POST /auth/refresh`, `POST /auth/logout` | cookie | new access token; clear the cookie (204) |
+| `GET /auth/me` | yes | `{id, username}` |
+| `GET /lessons/` | yes | per-lesson `{id, name, exercise_count, completed_count}` |
+| `GET /lessons/{lesson}/progress` | yes | `[{exercise_id, completed, started}]` |
+| `GET`, `PUT /lessons/{lesson}/exercises/{ex}/code` | yes | saved code (`""` if none); `PUT` body `{code}` |
+| `POST /lessons/{lesson}/exercises/{ex}/run` | yes | body `{code}`; returns `{status, tests, message, compiler_output}` |
+| `GET /lessons/{lesson}/exercises/{ex}/tests` | no | the exercise's tests; public by design |
 
 ## Workflow
 

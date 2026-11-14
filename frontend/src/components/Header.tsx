@@ -1,22 +1,17 @@
 "use client";
 
 // The bar at the top of every page: logo on the left, links on the right.
+import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { currentUser, logout } from "@/lib/auth";
 
 export default function Header() {
-  const [user, setUser] = useState<string | null>(null);
+  const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  // Re-check who's logged in every time the page changes (e.g. right after logging in).
-  useEffect(() => setUser(currentUser()), [pathname]);
-
-  function handleLogout() {
-    logout();
-    setUser(null);
+  async function handleLogout() {
+    await logout();
     router.push("/");
   }
 
@@ -27,7 +22,7 @@ export default function Header() {
       </Link>
       <nav>
         {/* Logged in: app links. Logged out: Log In / Sign Up. */}
-        {user ? (
+        {loading ? null : user ? (
           <>
             <Link href="/dashboard" className={pathname === "/dashboard" ? "active" : ""}>Dashboard</Link>
             <Link href="/profile" className={pathname === "/profile" ? "active" : ""}>Profile</Link>
