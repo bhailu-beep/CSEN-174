@@ -23,6 +23,9 @@ export async function fetchStatuses(lessonIds: string[]): Promise<StatusMap> {
   return map;
 }
 
+// Erases the student's saved code and progress in every lesson.
+export const resetProgress = () => api<void>("/lessons/progress", { method: "DELETE" });
+
 const codePath = (e: Pick<Exercise, "topic" | "id">) => `/lessons/${e.topic}/exercises/${e.id}/code`;
 
 // Returns "" if the student has nothing saved yet.

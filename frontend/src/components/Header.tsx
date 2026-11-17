@@ -11,7 +11,11 @@ export default function Header() {
   const pathname = usePathname();
 
   async function handleLogout() {
-    await logout();
+    try {
+      await logout();
+    } catch {
+      // The server could not be told, but the provider has already logged the user out locally.
+    }
     router.push("/");
   }
 

@@ -53,6 +53,10 @@ python -m pytest -q                  # from the repo root: backend
 cd frontend && npm test              # frontend (fetch is mocked)
 ```
 
+- `backend/tests/integration/`: real routers, services and a throwaway Postgres (Docker needed, tests are marked `docker`); only the C++ sandbox is faked.
+- `frontend/tests/components/`: React Testing Library tests for pages and components, with `fetch` and Monaco mocked.
+- Not covered yet: a browser end-to-end test with the real frontend talking to the real backend.
+
 ## Auth in short
 
 - `/auth/register` and `/auth/login` return an access token (15 min) and set an httpOnly refresh cookie (7 days, path `/auth`).

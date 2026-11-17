@@ -74,6 +74,8 @@ export default function TopicPage() {
           </div>
         </div>
 
+        {error && <p className="error" role="alert">{error}</p>}
+
         {lesson && (
           <Lesson lesson={lesson} onStart={scrollToExercises} />
         )}

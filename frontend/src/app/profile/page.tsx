@@ -1,11 +1,11 @@
 "use client";
 
-// Profile page (/profile): stats and progress by topic.
+// Profile page (/profile): stats, progress by topic, and a button to reset progress.
 import { useAuth } from "@/components/AuthProvider";
 import ProgressBar from "@/components/ProgressBar";
 import ProtectedPage from "@/components/ProtectedPage";
 import { exercises, exercisesInTopic } from "@/lib/exercises";
-import { fetchStatuses, statusOf, type StatusMap } from "@/lib/progress";
+import { fetchStatuses, resetProgress, statusOf, type StatusMap } from "@/lib/progress";
 import { topics } from "@/lib/topics";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -13,13 +13,31 @@ import { useEffect, useState } from "react";
 export default function ProfilePage() {
   const { user } = useAuth();
   const [statuses, setStatuses] = useState<StatusMap>({});
-  const [error, setError] = useState("");  
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetchStatuses(topics.map((t) => t.id))
       .then(setStatuses)
       .catch((e) => setError(e instanceof Error ? e.message : "Something went wrong."));
   }, []);
+
+  // Two clicks needed so progress isn't erased by accident.
+  async function handleReset() {
+    if (!confirming) return setConfirming(true);
+    setResetting(true);
+    setError("");
+    try {
+      await resetProgress();
+      setStatuses(await fetchStatuses(topics.map((t) => t.id)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setResetting(false);
+      setConfirming(false);
+    }
+  }
 
   const count = (s: "new" | "started" | "solved") =>
     exercises.filter((e) => statusOf(statuses, e) === s).length;
@@ -53,6 +71,12 @@ export default function ProfilePage() {
             );
           })}
         </ul>
+
+        <div className="dangerZone">
+          <button className="button secondary" disabled={resetting} onClick={handleReset} onBlur={() => setConfirming(false)}>
+            {resetting ? "Resetting…" : confirming ? "Click again to erase all saved code and progress" : "Reset my progress"}
+          </button>
+        </div>
       </main>
     </ProtectedPage>
   );

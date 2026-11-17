@@ -38,7 +38,7 @@ Press `Ctrl + C` in the terminal to stop it.
 | `/topics/<topic>` | A quick lesson, then the exercises for one topic, e.g. `/topics/loops` |
 | `/topics/all` | **Full C++**: every exercise, with search, topic filters, and a random pick |
 | `/exercises/<slug>` | Problem, examples, hint, Monaco editor, test results |
-| `/profile` | Stats and progress by topic |
+| `/profile` | Stats and progress by topic, button to reset all progress |
 
 ## What lives where
 

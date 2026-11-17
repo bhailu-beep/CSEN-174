@@ -57,6 +57,7 @@ AUTHENTICATED_ROUTES = [
     ("GET", "/lessons/basics/exercises/sum/code"),
     ("PUT", "/lessons/basics/exercises/sum/code?code=x"),
     ("POST", "/lessons/basics/exercises/sum/run"),
+    ("DELETE", "/lessons/progress"),
 ]
 
 
@@ -258,3 +259,10 @@ def test_get_lesson_progress_for_an_unknown_lesson_is_404(client: TestClient, pr
     progress.get_lesson_progress.side_effect = ValueError("Lesson missing not found")
 
     assert client.get("/lessons/missing/progress", headers=AUTH).status_code == 404
+
+
+def test_delete_progress_clears_only_the_current_users_progress(client: TestClient, progress: AsyncMock) -> None:
+    response = client.delete("/lessons/progress", headers=AUTH)
+
+    assert response.status_code == 204
+    progress.clear_all_progress.assert_awaited_once_with(USER.id)

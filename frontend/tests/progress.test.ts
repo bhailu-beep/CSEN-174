@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAccessToken } from "@/lib/api";
 import { findExercise } from "@/lib/exercises";
-import { fetchStatuses, loadCode, saveCode, statusOf } from "@/lib/progress";
+import { fetchStatuses, loadCode, resetProgress, saveCode, statusOf } from "@/lib/progress";
 import { runCode } from "@/lib/runCode";
 
 const json = (status: number, body?: unknown) =>
@@ -65,5 +65,14 @@ describe("runCode", () => {
     const res = await runCode(other, "bad");
     expect(res.status).toBe("compilation_error");
     expect(res.compilerOutput).toBe("error: x");
+  });
+});
+
+describe("resetProgress", () => {
+  it("sends DELETE /lessons/progress", async () => {
+    fetchMock.mockResolvedValueOnce(json(204));
+    await resetProgress();
+    expect(fetchMock.mock.calls[0][0]).toContain("/lessons/progress");
+    expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
   });
 });

@@ -22,6 +22,14 @@ async def get_lessons(
 ) -> list[LessonOverview]:
     return await lessons.get_lessons(user.id)
 
+@router.delete("/progress", status_code=204)
+async def clear_progress(
+    user: Annotated[User, Depends(get_current_user)],
+    lesson_progress_service: Annotated[LessonProgressService, Depends(get_lesson_progress_service)],
+) -> None:
+    """Erase the current user's saved code and completion for every lesson."""
+    await lesson_progress_service.clear_all_progress(user.id)
+
 @router.get("/{lesson_id}/progress")
 async def get_lesson_progress(
     user: Annotated[User, Depends(get_current_user)],

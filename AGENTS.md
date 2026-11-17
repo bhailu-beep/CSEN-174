@@ -65,7 +65,7 @@ The sandbox prints one JSON line per test, `{"actual"}`, in test order. Python c
 
 ## Scope discipline (do not overbuild)
 
-Built: username/password auth (JWT access token + refresh cookie), PostgreSQL, saved code, per-exercise progress. Still out of scope: submission history, leaderboards, multiple languages, queues/workers, advanced sandboxing, admin dashboard, a progress-reset route. Grow the HTTP API only for real features. Don't optimize deployment before local works.
+Built: username/password auth (JWT access token + refresh cookie), PostgreSQL, saved code, per-exercise progress. Still out of scope: submission history, leaderboards, multiple languages, queues/workers, advanced sandboxing, admin dashboard, a UI for progress reset (the route exists). Grow the HTTP API only for real features. Don't optimize deployment before local works.
 
 Current API (auth = `Authorization: Bearer <access token>`):
 
@@ -76,6 +76,7 @@ Current API (auth = `Authorization: Bearer <access token>`):
 | `GET /auth/me` | yes | `{id, username}` |
 | `GET /lessons/` | yes | per-lesson `{id, name, exercise_count, completed_count}` |
 | `GET /lessons/{lesson}/progress` | yes | `[{exercise_id, completed, started}]` |
+| `DELETE /lessons/progress` | yes | erase the current user's saved code and progress in every lesson (204) |
 | `GET`, `PUT /lessons/{lesson}/exercises/{ex}/code` | yes | saved code (`""` if none); `PUT` body `{code}` |
 | `POST /lessons/{lesson}/exercises/{ex}/run` | yes | body `{code}`; returns `{status, tests, message, compiler_output}` |
 | `GET /lessons/{lesson}/exercises/{ex}/tests` | no | the exercise's tests; public by design |
