@@ -1,17 +1,16 @@
 "use client";
 
 // Exercise page (/exercises/<slug>): the problem on the left, the editor and test results on the right.
-import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import ProtectedPage from "@/components/ProtectedPage";
 import CodeEditor from "@/components/CodeEditor";
+import ProtectedPage from "@/components/ProtectedPage";
 import TestResults from "@/components/TestResults";
 import { exercisesInTopic, findExercise } from "@/lib/exercises";
-import { findTopic } from "@/lib/topics";
-import { clearCode, loadCode, saveCode } from "@/lib/storage/codeStorage";
-import { markSolved } from "@/lib/storage/progressStorage";
+import { loadCode, saveCode } from "@/lib/progress";
 import { runCode, type RunResult } from "@/lib/runCode";
+import { findTopic } from "@/lib/topics";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 export default function ExercisePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -24,18 +23,42 @@ export default function ExercisePage() {
   const [error, setError] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [editorVersion, setEditorVersion] = useState(0); // bump this to load new code into the editor
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load the saved code (or the starter code) whenever the exercise changes.
+  // Load the saved code (or the starter code) from the server whenever the exercise changes.
   useEffect(() => {
-    if (exercise) {
-      setCode(loadCode(exercise.id) ?? exercise.starterCode);
-      setEditorVersion((v) => v + 1);
-    }
     setShowHint(false);
     setResult(null);
     setError("");
     setConfirmReset(false);
+    if (!exercise) return;
+    let cancelled = false;
+    setEditorVersion(0); // show "Loading editor…" until the saved code arrives
+    loadCode(exercise)
+      .then((saved) => saved || exercise.starterCode) // "" means nothing saved yet
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Couldn't load your saved code.");
+        return exercise.starterCode;
+      })
+      .then((initial) => {
+        if (cancelled) return;
+        setCode(initial);
+        setEditorVersion((v) => v + 1);
+      });
+    return () => {
+      cancelled = true;
+      if (saveTimer.current) clearTimeout(saveTimer.current); // pending save is dropped on navigation
+    };
   }, [exercise]);
+
+  // Save after the student pauses typing. Only real edits are saved, so "started" stays accurate.
+  function scheduleSave(value: string) {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const target = exercise!;
+    saveTimer.current = setTimeout(() => {
+      saveCode(target, value).catch(() => setError("Couldn't save your code. Check your connection."));
+    }, 800);
+  }
 
   if (!exercise) {
     return (
@@ -56,7 +79,7 @@ export default function ExercisePage() {
 
   function updateCode(value: string) {
     setCode(value);
-    saveCode(exercise!.id, value);
+    scheduleSave(value);
     setResult(null);
     setConfirmReset(false);
   }
@@ -66,7 +89,9 @@ export default function ExercisePage() {
     if (code !== exercise!.starterCode && !confirmReset) return setConfirmReset(true);
     setCode(exercise!.starterCode);
     setEditorVersion((v) => v + 1);
-    clearCode(exercise!.id);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    // Overwrite the saved copy so the old code doesn't come back on reload.
+    saveCode(exercise!, exercise!.starterCode).catch(() => setError("Couldn't save your code. Check your connection."));
     setResult(null);
     setError("");
     setConfirmReset(false);
@@ -78,14 +103,11 @@ export default function ExercisePage() {
     setResult(null);
     setError("");
     try {
-      const res = await runCode(exercise!, code);
-      setResult(res);
-      // Only a real run where every test passed counts as solved (never the sample results).
-      const allPassed = res.status === "passed" && res.tests.length > 0 && res.tests.every((t) => t.passed);
-      if (allPassed && !res.preview) markSolved(exercise!.id);
-    } catch {
-      // runCode() throws when the server can't be reached.
-      setError("Couldn't reach the server. Check your connection and try again.");
+      // The server scores the run and records the exercise as solved when every test passes.
+      setResult(await runCode(exercise!, code));
+    } catch (e) {
+      // NetworkError (server unreachable) or ApiError (e.g. 401, 404, 5xx): show the real message.
+      setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       setRunning(false);
     }

@@ -10,11 +10,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from config import MAX_SOURCE_BYTES
 from database.types.lesson import LessonOverview
 from database.types.lesson_progress import ExerciseProgress
 from database.types.user import User
 from dependencies import get_lesson_progress_service, get_lesson_service, get_user_service
 from models.result import ScoredTest, SubmissionResult
+from models.tests import TestCase
 from routers.lesson import router
 
 USER = User(id=4, username="ada", hashed_password="irrelevant")
@@ -55,6 +57,7 @@ AUTHENTICATED_ROUTES = [
     ("GET", "/lessons/basics/exercises/sum/code"),
     ("PUT", "/lessons/basics/exercises/sum/code?code=x"),
     ("POST", "/lessons/basics/exercises/sum/run"),
+    ("DELETE", "/lessons/progress"),
 ]
 
 
@@ -118,18 +121,60 @@ def test_get_code_for_an_unknown_exercise_is_404(client: TestClient, progress: A
     assert "not found" in response.json()["detail"]
 
 
-def test_put_code_saves_the_query_parameter_for_the_current_user(client: TestClient, progress: AsyncMock) -> None:
-    response = client.put("/lessons/basics/exercises/sum/code", params={"code": "int y;"}, headers=AUTH)
+def test_put_code_saves_the_json_body_for_the_current_user(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", json={"code": "int y;"}, headers=AUTH)
 
     assert response.status_code == 200
     progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", "int y;")
 
 
-def test_put_code_without_code_is_a_validation_error(client: TestClient, progress: AsyncMock) -> None:
-    response = client.put("/lessons/basics/exercises/sum/code", headers=AUTH)
+def test_put_code_keeps_newlines_quotes_and_symbols_intact(client: TestClient, progress: AsyncMock) -> None:
+    code = '#include <iostream>\nint main() {\n    std::cout << "a&b=c+d%20";\n}\n'
+
+    client.put("/lessons/basics/exercises/sum/code", json={"code": code}, headers=AUTH)
+
+    progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", code)
+
+
+def test_put_code_accepts_code_far_longer_than_a_url_allows(client: TestClient, progress: AsyncMock) -> None:
+    code = "// filler\n" * 20_000
+
+    response = client.put("/lessons/basics/exercises/sum/code", json={"code": code}, headers=AUTH)
+
+    assert response.status_code == 200
+    progress.update_code.assert_awaited_once_with(USER.id, "basics", "sum", code)
+
+
+def test_put_code_rejects_code_over_the_source_limit(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put(
+        "/lessons/basics/exercises/sum/code", json={"code": "x" * (MAX_SOURCE_BYTES + 1)}, headers=AUTH
+    )
 
     assert response.status_code == 422
     progress.update_code.assert_not_awaited()
+
+
+@pytest.mark.parametrize("body", [None, {}, {"code": 5}, {"source": "x"}])
+def test_put_code_rejects_a_bad_body(client: TestClient, progress: AsyncMock, body: dict | None) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", json=body, headers=AUTH)
+
+    assert response.status_code == 422
+    progress.update_code.assert_not_awaited()
+
+
+def test_put_code_no_longer_accepts_the_code_as_a_query_parameter(client: TestClient, progress: AsyncMock) -> None:
+    response = client.put("/lessons/basics/exercises/sum/code", params={"code": "int y;"}, headers=AUTH)
+
+    assert response.status_code == 422
+    progress.update_code.assert_not_awaited()
+
+
+def test_put_code_for_an_unknown_exercise_is_404(client: TestClient, progress: AsyncMock) -> None:
+    progress.update_code.side_effect = ValueError("Exercise nope not found in lesson basics")
+
+    response = client.put("/lessons/basics/exercises/nope/code", json={"code": "x"}, headers=AUTH)
+
+    assert response.status_code == 404
 
 
 def test_run_returns_the_scored_submission_shape(client: TestClient, lessons: AsyncMock) -> None:
@@ -167,6 +212,27 @@ def test_run_for_an_unknown_exercise_is_404(client: TestClient, lessons: AsyncMo
     assert response.status_code == 404
 
 
+def test_get_tests_is_public_and_returns_inputs_and_expected_values(
+    client: TestClient, lessons: AsyncMock, users: AsyncMock
+) -> None:
+    # Intentional: this is a learning platform, so the tests are visible. They are not user-specific,
+    # so the route needs no login. If you add auth here, update AGENTS.md and the plan too.
+    lessons.get_tests.return_value = [
+        TestCase(inputs=("2", "3"), expected="5"),
+        TestCase(inputs=("-4", "4"), expected="0"),
+    ]
+
+    response = client.get("/lessons/basics/exercises/sum/tests")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"inputs": ["2", "3"], "expected": "5"},
+        {"inputs": ["-4", "4"], "expected": "0"},
+    ]
+    lessons.get_tests.assert_awaited_once_with("basics", "sum")
+    users.user_from_token.assert_not_awaited()
+
+
 def test_get_tests_unknown_exercise_is_404(client: TestClient, lessons: AsyncMock) -> None:
     lessons.get_tests.return_value = None
 
@@ -193,3 +259,10 @@ def test_get_lesson_progress_for_an_unknown_lesson_is_404(client: TestClient, pr
     progress.get_lesson_progress.side_effect = ValueError("Lesson missing not found")
 
     assert client.get("/lessons/missing/progress", headers=AUTH).status_code == 404
+
+
+def test_delete_progress_clears_only_the_current_users_progress(client: TestClient, progress: AsyncMock) -> None:
+    response = client.delete("/lessons/progress", headers=AUTH)
+
+    assert response.status_code == 204
+    progress.clear_all_progress.assert_awaited_once_with(USER.id)

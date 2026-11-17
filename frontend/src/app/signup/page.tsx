@@ -1,24 +1,39 @@
 "use client";
 
 // Sign-up page (/signup): create an account with a username and password (no email).
-import { FormEvent, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import { validateCredentials } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signup } from "@/lib/auth";
+import { FormEvent, useState } from "react";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { signup } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError("");
     if (password !== confirm) return setError("Passwords don't match.");
-    const problem = signup(username, password);
+    
+    const problem = validateCredentials(username, password);
+
     if (problem) return setError(problem);
-    router.push("/dashboard");
+
+    setSubmitting(true);
+    try {
+      await signup(username, password);
+      router.push("/dashboard");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -40,10 +55,8 @@ export default function SignupPage() {
             <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
           </label>
           {error && <p className="error" role="alert">{error}</p>}
-          <button className="button full" type="submit">Create Account</button>
+          <button className="button full" type="submit" disabled={submitting}>Create Account</button>
         </form>
-        {/* TODO(backend): remove this note once accounts are saved on the server. */}
-        <p className="hint">Prototype: accounts are only saved in this browser for now.</p>
         <p className="footnote">Already have an account? <Link href="/login">Log in</Link></p>
       </div>
     </main>

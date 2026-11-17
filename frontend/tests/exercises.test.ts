@@ -30,7 +30,7 @@ describe("exercise data", () => {
   });
 
   it("finds an exercise by slug", () => {
-    expect(findExercise("factorial")?.id).toBe("016-factorial");
+    expect(findExercise("factorial")?.id).toBe("factorial");
     expect(findExercise("nope")).toBeUndefined();
   });
 });

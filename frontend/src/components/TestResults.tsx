@@ -34,20 +34,14 @@ export default function TestResults({ result, running, error }: Props) {
 
       {result && (
         <>
-          {/* TODO(backend): this note goes away once runCode() returns real results. */}
-          {result.preview && (
-            <p className="previewNote">
-              Sample results: your code was not actually run. Real results will show here once the backend is connected.
-            </p>
-          )}
           <p className={`resultStatus ${result.status === "passed" ? "pass" : "fail"}`}>{HEADLINES[result.status]}</p>
           {EXPLANATIONS[result.status] && <p>{EXPLANATIONS[result.status]}</p>}
           {result.compilerOutput && <pre className="errorOutput">{result.compilerOutput}</pre>}
           {result.message && <pre className="errorOutput">{result.message}</pre>}
 
           <ul className="testList">
-            {result.tests.map((test) => (
-              <li key={test.name} className={test.passed ? "pass" : "fail"}>
+            {result.tests.map((test, i) => (
+              <li key={i} className={test.passed ? "pass" : "fail"}>
                 <span className="testIcon" aria-label={test.passed ? "passed" : "failed"}>{test.passed ? "✓" : "✗"}</span>
                 <code>{test.name}</code>
                 <span className="testDetail">

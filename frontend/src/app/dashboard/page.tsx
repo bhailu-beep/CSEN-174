@@ -1,35 +1,36 @@
 "use client";
 
 // Dashboard (/dashboard): overall progress, the Full C++ section, and the topic cards.
+import { useAuth } from "@/components/AuthProvider";
+import ProgressBar from "@/components/ProgressBar";
+import ProtectedPage from "@/components/ProtectedPage";
+import { exercises, exercisesInTopic } from "@/lib/exercises";
+import { fetchStatuses, statusOf, type StatusMap } from "@/lib/progress";
+import { ALL_TOPICS_ID, topics } from "@/lib/topics";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import ProtectedPage from "@/components/ProtectedPage";
-import ProgressBar from "@/components/ProgressBar";
-import { currentUser } from "@/lib/auth";
-import { exercises, exercisesInTopic } from "@/lib/exercises";
-import { ALL_TOPICS_ID, topics } from "@/lib/topics";
-import { getStatuses, type Status } from "@/lib/storage/progressStorage";
 
 export default function Dashboard() {
-  const [name, setName] = useState("");
-  const [statuses, setStatuses] = useState<Record<string, Status>>({});
+  const { user } = useAuth();
+  const [statuses, setStatuses] = useState<StatusMap>({});
+  const [error, setError] = useState("");  
 
-  // Saved progress lives in the browser, so read it after the page loads.
   useEffect(() => {
-    setName(currentUser() ?? "");
-    setStatuses(getStatuses(exercises));
+    fetchStatuses(topics.map((t) => t.id))
+      .then(setStatuses)
+      .catch((e) => setError(e instanceof Error ? e.message : "Something went wrong."));
   }, []);
 
-  const solvedIn = (list: typeof exercises) => list.filter((e) => statuses[e.id] === "solved").length;
+  const solvedIn = (list: typeof exercises) => list.filter((e) => statusOf(statuses, e) === "solved").length;
   const totalSolved = solvedIn(exercises);
   // The first exercise the student started but hasn't solved, for the "Continue" link.
-  const inProgress = exercises.find((e) => statuses[e.id] === "started");
+  const inProgress = exercises.find((e) => statusOf(statuses, e) === "started");
 
   return (
     <ProtectedPage>
       <main className="container">
         <div className="welcome">
-          <h1>Welcome, {name}!</h1>
+          <h1>Welcome, {user?.username}!</h1>
           <p>{totalSolved} of {exercises.length} exercises solved</p>
           <ProgressBar done={totalSolved} total={exercises.length} label="Overall progress" />
           {inProgress && (
@@ -38,6 +39,8 @@ export default function Dashboard() {
             </Link>
           )}
         </div>
+
+        {error && <p className="error" role="alert">{error}</p>}
 
         <Link className="fullCpp" href={`/topics/${ALL_TOPICS_ID}`}>
           <div>

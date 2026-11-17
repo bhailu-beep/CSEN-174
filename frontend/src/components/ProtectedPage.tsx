@@ -1,18 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
-import { currentUser } from "@/lib/auth";
+import { useEffect } from "react";
 
 // Wrap a page in this to send logged-out visitors to /login.
 export default function ProtectedPage({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [allowed, setAllowed] = useState(false);
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (currentUser()) setAllowed(true);
-    else router.replace("/login");
-  }, [router]);
+    if (!loading && !user) router.replace("/login");
+  }, [loading, user, router]);
 
-  return allowed ? <>{children}</> : <p className="container">Loading…</p>;
+  return user ? <>{children}</> : <p className="container">Loading…</p>;
 }

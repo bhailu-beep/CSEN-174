@@ -26,7 +26,7 @@ A learner should be able to:
 3. Choose any exercise without following a required sequence.
 4. Read the exercise description and examples.
 5. Edit starter C++ code in an in-browser Monaco editor.
-6. Run the code against hidden tests.
+6. Run the code against the exercise's tests.
 7. See clear execution feedback, including:
    - individual test results;
    - expected vs. actual output where appropriate;
@@ -34,7 +34,7 @@ A learner should be able to:
    - timeout errors;
    - execution errors.
 8. Have their current code saved locally in the browser.
-9. See an exercise marked **solved only when all hidden tests pass**.
+9. See an exercise marked **solved only when all tests pass**.
 10. Reset their code to the original starter code.
 11. Reset their locally stored progress.
 12. Return to exercises they have already worked on.
@@ -61,7 +61,7 @@ The first substantial release should include:
 - Section-grouped browsing of the exercise list
 - Monaco code editor
 - Run button
-- Hidden tests
+- Exercise tests (visible to learners)
 - Custom lightweight C++ test harness
 - JSON Lines (JSONL) test output
 - C++ compilation and execution in Docker
@@ -176,7 +176,7 @@ A separate Submit workflow can be added later if the team decides that a distinc
 
 ### Solved status
 
-An exercise becomes locally solved only when **all hidden tests pass**.
+An exercise becomes locally solved only when **all tests pass**.
 
 A partial pass does not count as solved.
 
@@ -194,7 +194,7 @@ It can store:
 It should **not** store:
 - passwords;
 - authentication tokens/secrets;
-- hidden tests;
+- the server's test harness files (`tester.cpp`);
 - authoritative user records;
 - anything that must remain secure.
 
@@ -254,7 +254,7 @@ The frontend should primarily handle:
 The frontend should **not** know:
 - how `g++` is invoked;
 - how Docker is started;
-- where hidden tests live;
+- where test files live;
 - how resource limits are enforced;
 - how compiler exit codes are interpreted;
 - how execution workspaces are created;
@@ -340,7 +340,7 @@ CppRunnerService.run(source, *, tester, tests, timeout_seconds=2.0) -> RunResult
 Responsibilities include:
 - validating limits (source size, positive timeout);
 - checking that Docker is available and building the sandbox image on first use;
-- creating a temporary workspace and writing the source (and, once the harness exists, the hidden test files) into it;
+- creating a temporary workspace and writing the source (and, once the harness exists, the test files) into it;
 - starting the Docker sandbox, which compiles with `g++` and runs the binary (`backend/sandbox/run.sh`);
 - enforcing execution constraints (container limits, output cap, wall-clock timeout);
 - collecting stdout/stderr/exit codes and classifying them (compile error, compile timeout, run timeout, killed, ...);
@@ -472,7 +472,7 @@ The exact folder names can change as implementation progresses. The important se
 ```text
 web/       -> frontend
 backend/   -> FastAPI + sandbox runner (runner/) + sandbox image (sandbox/)
-exercises/ -> exercise definitions and hidden tests
+exercises/ -> exercise definitions and tests
 docs/      -> project documentation
 ```
 
@@ -497,7 +497,7 @@ exercises/
 
 ### Lessons, ids and metadata
 
-A lesson is a group of exercises. Problem text, examples, hints, and starter code live in the frontend. An exercise folder on the backend holds only the files needed to run hidden tests:
+A lesson is a group of exercises. Problem text, examples, hints, and starter code live in the frontend. An exercise folder on the backend holds only the files needed to run the exercise's tests:
 
 | Value | Where it comes from | Example |
 |---|---|---|
@@ -511,9 +511,9 @@ Rules:
 - The backend scans `exercises/*/*/` at startup and builds a `(lesson id, exercise id) -> path` index. It must never build a filesystem path directly from a client-supplied id; it looks the pair up in the index and rejects unknown ids.
 - Startup validation should fail loudly on a folder that is not a slug, or a missing `tester.cpp` or `tests.txt`. The order students see is the frontend list, not the folder sort.
 
-### Hidden tests
+### Tests
 
-`tester.cpp` and `tests.txt` stay on the server. `tests.txt` lists one `input` per argument, then `expected`. A blank line separates cases. The browser never receives either file.
+`tester.cpp` and `tests.txt` live on the server and are the source of truth. `tests.txt` lists one `input` per argument, then `expected`. A blank line separates cases. Tests are **not secret**: this is a learning platform, so learners may see the inputs and expected values. The backend serves them from a public route (`GET .../tests`, no login, because they are not user-specific) and `/run` returns the expected value for each test. The backend never mounts `expected` into the sandbox, so student code cannot read the answers while it runs, and the browser never receives `tester.cpp`.
 
 ---
 
@@ -761,7 +761,7 @@ The client sends:
 - lesson id and exercise id in the path;
 - student's current code in the body.
 
-The client should **not** send hidden tests.
+The client should **not** send tests or expected answers; the server owns them.
 
 ### Later routes
 
@@ -1434,7 +1434,7 @@ A possible multi-week schedule:
 ### Milestone 3 — Test harness + runner integration
 
 - first exercise
-- hidden tests
+- tests
 - JSONL
 - runner integration (`run_exercise`, result mapping)
 
@@ -1495,7 +1495,7 @@ The first release should be considered complete when a new user can:
 5. Read its description and examples.
 6. Edit starter C++ code.
 7. Run the code.
-8. Receive useful results from hidden tests.
+8. Receive useful results from the tests.
 9. See compilation errors when their code does not compile.
 10. See a timeout when execution exceeds the limit.
 11. See individual test results when tests fail.
@@ -1787,7 +1787,7 @@ The intended first-release architecture is:
                            v
                 ┌─────────────────────┐
                 │ g++ + C++ Harness   │
-                │ Hidden Tests        │
+                │ Tests               │
                 └─────────────────────┘
 ```
 
